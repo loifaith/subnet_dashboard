@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Miner Incentive Distribution - SN71</title>
+    <title>Miner Incentive Distribution - SN88</title>
     <link rel="icon" type="image/x-icon" href="/asset/modern_favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="/asset/modern_icon_16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/asset/modern_icon_32.png">
     <script>
         (function(){
             try {
-                var t = localStorage.getItem('sn71-dashboard-theme');
-                var explicit = localStorage.getItem('sn71-dashboard-theme-user-set') === '1';
+                var t = localStorage.getItem('sn88-dashboard-theme');
+                var explicit = localStorage.getItem('sn88-dashboard-theme-user-set') === '1';
                 // Default to dark. Only respect light when user explicitly selected it.
                 if (t === 'light' && explicit) return;
                 document.documentElement.classList.add('theme-dark');
@@ -50,6 +50,35 @@
         html.theme-dark .subnet-label { color: #94a3b8; }
         .subnet-input { width: 70px; padding: 6px 10px; border: 1px solid #dee2e6; border-radius: 8px; font-size: 0.95rem; text-align: center; }
         html.theme-dark .subnet-input { background: #0f172a; border-color: #475569; color: #e2e8f0; }
+        .subnet-reg-cost {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            padding: 4px 12px;
+            border-radius: 8px;
+            background: rgba(13, 110, 253, 0.08);
+            border: 1px solid rgba(13, 110, 253, 0.18);
+            white-space: nowrap;
+        }
+        html.theme-dark .subnet-reg-cost {
+            background: rgba(56, 189, 248, 0.08);
+            border-color: rgba(56, 189, 248, 0.22);
+        }
+        .subnet-reg-cost-label {
+            font-size: 0.78rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        html.theme-dark .subnet-reg-cost-label { color: #94a3b8; }
+        .subnet-reg-cost-value {
+            font-family: monospace;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #0d6efd;
+            font-variant-numeric: tabular-nums;
+        }
+        html.theme-dark .subnet-reg-cost-value { color: #7dd3fc; }
         .page-title { font-size: 1.8rem; font-weight: 600; color: #333; }
         html.theme-dark .page-title { color: #f1f5f9; }
         .content-area { flex: 1; overflow-y: auto; padding: 30px; }
@@ -77,6 +106,13 @@
         .stat-value.success { color: #28a745; }
         .stat-value.warning { color: #fd7e14; }
         .stat-value.info { color: #17a2b8; }
+        .stat-value-sub {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #6c757d;
+            margin-left: 8px;
+        }
+        html.theme-dark .stat-value-sub { color: #94a3b8; }
 
         .coldkey-card {
             background: #fff;
@@ -118,7 +154,7 @@
         .clear-highlight-btn { background: transparent; border: none; color: inherit; cursor: pointer; margin-left: 8px; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 1rem; transition: background 0.2s; }
         .clear-highlight-btn:hover { background: rgba(0,0,0,0.1); }
         html.theme-dark .clear-highlight-btn:hover { background: rgba(255,255,255,0.15); }
-        .chart-container { height: 380px; position: relative; }
+        .chart-container { height: 550px; position: relative; }
 
         .table-card { background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #eee; }
         html.theme-dark .table-card { background: #1e293b; border-color: #334155; }
@@ -132,11 +168,11 @@
         .miners-table { width: 100%; border-collapse: collapse; }
         .miners-table thead { background: #f8f9fa; }
         html.theme-dark .miners-table thead { background: #334155; }
-        .miners-table th { padding: 12px; text-align: left; font-weight: 600; font-size: 0.8rem; color: #495057; border-bottom: 2px solid #dee2e6; cursor: pointer; }
+        .miners-table th { padding: 6px 8px; text-align: left; font-weight: 600; font-size: 0.72rem; color: #495057; border-bottom: 2px solid #dee2e6; cursor: pointer; line-height: 1.15; }
         html.theme-dark .miners-table th { color: #e2e8f0; border-bottom-color: #475569; }
         .miners-table th:hover { background: #e9ecef; }
         html.theme-dark .miners-table th:hover { background: #475569; }
-        .miners-table td { padding: 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
+        .miners-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; line-height: 1.15; vertical-align: middle; }
         html.theme-dark .miners-table td { border-bottom-color: #334155; color: #e2e8f0; }
         .miners-table tr:hover { background: #f8f9fa; }
         html.theme-dark .miners-table tbody tr:hover { background: #334155; }
@@ -147,21 +183,372 @@
         .rank-cell { font-weight: 600; color: #007bff; }
         .incentive-cell { font-weight: 600; color: #28a745; }
         .incentive-cell.owned { color: #e65100; }
-        .hotkey-cell { font-family: monospace; font-size: 0.85rem; color: #6c757d; }
+        .hotkey-cell { font-family: monospace; font-size: 0.75rem; color: #6c757d; }
         .uid-cell { font-weight: 600; }
-        .owned-badge { background: #e65100; color: #fff; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
-        .coldkey-color-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 4px; vertical-align: middle; border: 1px solid #ccc; }
+        .owned-badge { background: #e65100; color: #fff; padding: 1px 5px; border-radius: 8px; font-size: 0.62rem; font-weight: 600; }
+        .immune-icon {
+            color: #17a2b8;
+            font-size: 0.85rem;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+        html.theme-dark .immune-icon { color: #22d3ee; }
+        .uid-status-link {
+            color: #007bff;
+            cursor: pointer;
+            font-weight: 700;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 2px;
+        }
+        html.theme-dark .uid-status-link { color: #7dd3fc; }
+        .uid-status-link:hover { color: #0056b3; }
+        html.theme-dark .uid-status-link:hover { color: #bae6fd; }
+        .sn88-miner-info-btn {
+            color: #6f42c1;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+        .sn88-miner-info-btn:hover { color: #5a32a3; }
+        html.theme-dark .sn88-miner-info-btn { color: #c4b5fd; }
+        html.theme-dark .sn88-miner-info-btn:hover { color: #ddd6fe; }
+        .sn88-meta-link {
+            font-size: 0.82rem;
+            margin-left: 8px;
+        }
+        .sn88-allocation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 6px 10px;
+            margin-top: 8px;
+            font-family: monospace;
+            font-size: 0.78rem;
+        }
+        .sn88-allocation-item {
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: rgba(111, 66, 193, 0.08);
+            border: 1px solid rgba(111, 66, 193, 0.15);
+        }
+        html.theme-dark .sn88-allocation-item {
+            background: rgba(196, 181, 253, 0.08);
+            border-color: rgba(196, 181, 253, 0.18);
+        }
+        .uid-status-section { margin-bottom: 16px; }
+        .uid-status-section h6 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+        html.theme-dark .uid-status-section h6 { color: #e2e8f0; }
+        .uid-status-meta {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-bottom: 12px;
+        }
+        html.theme-dark .uid-status-meta { color: #94a3b8; }
+        .uid-status-empty { color: #6c757d; font-size: 0.9rem; padding: 12px 0; }
+        html.theme-dark .uid-status-empty { color: #94a3b8; }
+        .coldkey-color-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; vertical-align: middle; border: 1px solid #ccc; }
         html.theme-dark .coldkey-color-dot { border-color: #64748b; }
-        .coldkey-text { font-size: 0.75rem; color: #6c757d; font-family: monospace; }
+        .coldkey-text { font-size: 0.68rem; color: #6c757d; font-family: monospace; }
         html.theme-dark .coldkey-text { color: #94a3b8; }
         .copy-btn { cursor: pointer; color: #007bff; opacity: 0; margin-left: 4px; transition: opacity 0.2s; }
         html.theme-dark .copy-btn { color: #38bdf8; }
         .miners-table tr:hover .copy-btn { opacity: 1; }
         .copy-btn:hover { color: #0056b3; }
         html.theme-dark .copy-btn:hover { color: #7dd3fc; }
+        .agent-name-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 700;
+            white-space: normal;
+            word-break: break-word;
+        }
+        .agent-name-block {
+            display: inline-block;
+            vertical-align: middle;
+            max-width: 100%;
+            padding: 2px 5px;
+            border-radius: 6px;
+            line-height: 1.15;
+        }
+        .agent-name-clickable {
+            cursor: pointer;
+            transition: filter 0.15s ease, transform 0.15s ease;
+        }
+        .agent-name-clickable:hover {
+            filter: brightness(1.08);
+        }
+        html.theme-dark .agent-name-clickable:hover {
+            filter: brightness(1.15);
+        }
+        html.theme-dark .agent-name-block {
+            padding: 3px 6px;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+        }
+        .server-cell-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #0d6efd;
+            line-height: 1.15;
+        }
+        html.theme-dark .server-cell-label { color: #60a5fa; }
+        .server-cell-ip {
+            display: block;
+            font-size: 0.58rem;
+            color: #6c757d;
+            font-family: monospace;
+            margin-top: 1px;
+            line-height: 1.1;
+        }
+        html.theme-dark .server-cell-ip { color: #94a3b8; }
+        .reg-date-cell { display: block; line-height: 1.15; white-space: nowrap; }
+        .reg-date-day { display: block; font-size: 0.82rem; }
+        .reg-date-time {
+            display: block;
+            font-size: 0.68rem;
+            color: #6c757d;
+            font-family: monospace;
+            margin-top: 1px;
+        }
+        html.theme-dark .reg-date-time { color: #94a3b8; }
+        .history-icon {
+            color: #0d6efd;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-left: 4px;
+        }
+        .history-icon:hover { color: #0a58ca; }
+        html.theme-dark .history-icon { color: #38bdf8; }
+        html.theme-dark .history-icon:hover { color: #7dd3fc; }
+        .history-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .history-toolbar label { margin: 0; font-size: 0.9rem; }
+        .history-chart-wrap {
+            height: 220px;
+            margin-bottom: 18px;
+            position: relative;
+        }
+        .history-chart-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #495057;
+        }
+        html.theme-dark .history-chart-title { color: #cbd5e1; }
+        .agent-params-summary {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.72rem;
+            font-weight: 500;
+            line-height: 1.15;
+            opacity: 0.9;
+        }
+        html.theme-dark .agent-params-summary { opacity: 0.95; }
+        .agent-param-item { margin-right: 6px; white-space: nowrap; }
+        .agent-param-value { font-family: monospace; font-size: 0.82rem; font-weight: 700; }
+        .agent-metrics-summary {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.68rem;
+            font-weight: 500;
+            line-height: 1.2;
+            opacity: 0.95;
+        }
+        html.theme-dark .agent-metrics-summary { opacity: 1; }
+        .agent-metric-item { margin-right: 6px; white-space: nowrap; }
+        .agent-metric-value { font-family: monospace; font-size: 0.75rem; font-weight: 700; }
+        .metric-cell {
+            font-family: monospace;
+            font-size: 0.72rem;
+            white-space: nowrap;
+        }
+        html.theme-dark .metric-cell { color: #e2e8f0; }
+        .metric-pnl-neg { color: #dc3545; font-weight: 700; }
+        html.theme-dark .metric-pnl-neg { color: #f87171; }
+        .pnl-books-cell { white-space: nowrap; }
+        .pnl-books-pos { color: #198754; font-weight: 700; }
+        .pnl-books-neg { color: #dc3545; font-weight: 700; }
+        html.theme-dark .pnl-books-pos { color: #4ade80; }
+        html.theme-dark .pnl-books-neg { color: #f87171; }
+        .volume-warn-cell { border-radius: 4px; padding: 2px 4px; font-weight: 600; }
+        html.theme-dark .volume-warn-cell { color: #fff !important; }
+        .params-json {
+            font-family: monospace;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            max-height: 60vh;
+            overflow: auto;
+            margin: 0;
+        }
+        html.theme-dark .params-json { background: #0f172a; color: #e2e8f0; }
+        html.theme-dark .modal-content { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+        html.theme-dark .modal-header { border-bottom-color: #334155; }
+        html.theme-dark .modal-footer { border-top-color: #334155; }
+        html.theme-dark .btn-close { filter: invert(1); }
+        .params-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        html.theme-dark .params-meta { background: #0f172a; border-color: #334155; }
+        .params-meta-item label {
+            display: block;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+        html.theme-dark .params-meta-item label { color: #94a3b8; }
+        .params-meta-item .meta-value { font-size: 0.9rem; font-family: monospace; word-break: break-all; }
+        .params-meta-item input, .params-meta-item select {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        html.theme-dark .params-meta-item input, html.theme-dark .params-meta-item select { background: #1e293b; border-color: #475569; color: #e2e8f0; }
+        .params-form-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .params-form-table th, .params-form-table td { padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+        html.theme-dark .params-form-table th, html.theme-dark .params-form-table td { border-bottom-color: #334155; }
+        .params-form-table th { text-align: left; font-size: 0.75rem; color: #6c757d; position: sticky; top: 0; background: #fff; z-index: 1; }
+        html.theme-dark .params-form-table th { background: #1e293b; color: #94a3b8; }
+        .params-form-table td:first-child { font-family: monospace; color: #495057; width: 42%; }
+        html.theme-dark .params-form-table td:first-child { color: #cbd5e1; }
+        .params-form-table input, .params-form-table select {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-family: monospace;
+        }
+        html.theme-dark .params-form-table input, html.theme-dark .params-form-table select {
+            background: #0f172a; border-color: #475569; color: #e2e8f0;
+        }
+        .params-form-wrap { max-height: 50vh; overflow: auto; border: 1px solid #eee; border-radius: 8px; }
+        html.theme-dark .params-form-wrap { border-color: #334155; }
+        .params-status { margin-top: 12px; font-size: 0.85rem; min-height: 1.2em; }
+        .params-status.success {
+            color: #155724;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+        .params-status.error {
+            color: #721c24;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+        html.theme-dark .params-status.success { color: #bbf7d0; background: #14532d; border-color: #166534; }
+        html.theme-dark .params-status.error { color: #fecaca; background: #7f1d1d; border-color: #991b1b; }
+        .params-empty { color: #6c757d; font-size: 0.9rem; padding: 20px 0; }
+        html.theme-dark .params-empty { color: #94a3b8; }
+        .agent-history-section {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #eee;
+        }
+        html.theme-dark .agent-history-section { border-top-color: #334155; }
+        .agent-history-section h6 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .agent-history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+        .agent-history-table th,
+        .agent-history-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+        }
+        html.theme-dark .agent-history-table th,
+        html.theme-dark .agent-history-table td { border-bottom-color: #334155; }
+        .agent-history-table th {
+            color: #6c757d;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        html.theme-dark .agent-history-table th { color: #94a3b8; }
+        .agent-history-source {
+            font-size: 0.68rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        html.theme-dark .agent-history-source { color: #94a3b8; }
+        .agent-history-arrow { color: #6c757d; padding: 0 4px; }
+        html.theme-dark .agent-history-arrow { color: #94a3b8; }
 
         .loading-overlay { display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.9); z-index: 9999; align-items: center; justify-content: center; }
         html.theme-dark .loading-overlay { background: rgba(15,23,42,0.95); }
+        .notify-toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 11050;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: min(420px, calc(100vw - 40px));
+            pointer-events: none;
+        }
+        .notify-toast {
+            pointer-events: auto;
+            min-width: 280px;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+            border: 1px solid transparent;
+        }
+        .notify-toast .toast-header {
+            font-weight: 600;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        .notify-toast .toast-body {
+            font-size: 0.9rem;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        .notify-toast-success { background: #d4edda; border-color: #c3e6cb; }
+        .notify-toast-success .toast-header { background: #d4edda; color: #155724; }
+        .notify-toast-success .toast-body { color: #155724; }
+        .notify-toast-error { background: #f8d7da; border-color: #f5c6cb; }
+        .notify-toast-error .toast-header { background: #f8d7da; color: #721c24; }
+        .notify-toast-error .toast-body { color: #721c24; }
+        html.theme-dark .notify-toast-success { background: #14532d; border-color: #166534; }
+        html.theme-dark .notify-toast-success .toast-header { background: #14532d; color: #bbf7d0; }
+        html.theme-dark .notify-toast-success .toast-body { color: #bbf7d0; }
+        html.theme-dark .notify-toast-error { background: #7f1d1d; border-color: #991b1b; }
+        html.theme-dark .notify-toast-error .toast-header { background: #7f1d1d; color: #fecaca; }
+        html.theme-dark .notify-toast-error .toast-body { color: #fecaca; }
+        html.theme-dark .notify-toast .btn-close { filter: invert(1); opacity: 0.8; }
         .loading-overlay.active { display: flex; }
         .pagination-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
         .pagination-info { color: #6c757d; font-size: 0.9rem; }
@@ -173,6 +560,159 @@
         html.theme-dark .pagination-info { color: #94a3b8; }
         html.theme-dark .pagination-buttons button { background: #334155; border-color: #475569; color: #e2e8f0; }
         html.theme-dark .pagination-buttons button:hover:not(:disabled) { background: #475569; }
+        .fee-regime-panel {
+            display: none;
+            margin-bottom: 18px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid #dee2e6;
+            background: #f8f9fa;
+        }
+        html.theme-dark .fee-regime-panel {
+            background: #0f172a;
+            border-color: #334155;
+        }
+        .fee-regime-panel.visible { display: block; }
+        .fee-regime-panel.regime-maker-rebate {
+            border-color: #ffc107;
+            background: linear-gradient(180deg, rgba(255,193,7,0.10), rgba(248,249,250,1));
+        }
+        .fee-regime-panel.regime-taker-rebate {
+            border-color: #0d6efd;
+            background: linear-gradient(180deg, rgba(13,110,253,0.10), rgba(248,249,250,1));
+        }
+        html.theme-dark .fee-regime-panel.regime-maker-rebate {
+            background: linear-gradient(180deg, rgba(255,193,7,0.12), rgba(15,23,42,1));
+        }
+        html.theme-dark .fee-regime-panel.regime-taker-rebate {
+            background: linear-gradient(180deg, rgba(56,189,248,0.12), rgba(15,23,42,1));
+        }
+        .fee-regime-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #333;
+        }
+        html.theme-dark .fee-regime-title { color: #f1f5f9; }
+        .fee-regime-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .fee-regime-toolbar label {
+            margin: 0;
+            font-size: 0.82rem;
+            color: #6c757d;
+        }
+        html.theme-dark .fee-regime-toolbar label { color: #94a3b8; }
+        .fee-regime-charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-top: 12px;
+        }
+        @media (max-width: 900px) {
+            .fee-regime-charts { grid-template-columns: 1fr; }
+        }
+        .fee-regime-chart-block {
+            background: rgba(255,255,255,0.55);
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 10px;
+            padding: 10px 12px 8px;
+        }
+        html.theme-dark .fee-regime-chart-block {
+            background: rgba(30,41,59,0.65);
+            border-color: rgba(255,255,255,0.06);
+        }
+        .fee-regime-chart-label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #6c757d;
+            margin-bottom: 6px;
+        }
+        html.theme-dark .fee-regime-chart-label { color: #94a3b8; }
+        .fee-regime-chart-wrap {
+            height: 160px;
+            position: relative;
+        }
+        .fee-regime-chart-wrap.books {
+            height: 200px;
+        }
+        .fee-regime-chart-sublabel {
+            font-size: 0.72rem;
+            color: #868e96;
+            margin-top: -2px;
+            margin-bottom: 6px;
+        }
+        html.theme-dark .fee-regime-chart-sublabel { color: #64748b; }
+        .fee-regime-empty {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #6c757d;
+            text-align: center;
+        }
+        html.theme-dark .fee-regime-empty { color: #94a3b8; }
+        .fee-regime-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .fee-regime-main {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .fee-regime-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            background: #e9ecef;
+            color: #495057;
+        }
+        .regime-maker-rebate .fee-regime-badge { background: #ffc107; color: #212529; }
+        .regime-taker-rebate .fee-regime-badge { background: #0d6efd; color: #fff; }
+        .regime-both-pay .fee-regime-badge { background: #6c757d; color: #fff; }
+        .fee-regime-desc {
+            font-size: 0.92rem;
+            color: #495057;
+        }
+        html.theme-dark .fee-regime-desc { color: #cbd5e1; }
+        .fee-regime-stats {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            color: #6c757d;
+            font-family: monospace;
+        }
+        html.theme-dark .fee-regime-stats { color: #94a3b8; }
+        .fee-regime-updated {
+            font-size: 0.78rem;
+            color: #adb5bd;
+            white-space: nowrap;
+        }
+        .fee-regime-details {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(0,0,0,0.08);
+            font-size: 0.82rem;
+        }
+        html.theme-dark .fee-regime-details { border-top-color: rgba(255,255,255,0.08); }
+        .fee-regime-books {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 6px 12px;
+            margin-top: 8px;
+            font-family: monospace;
+            font-size: 0.78rem;
+        }
     </style>
 </head>
 <body>
@@ -182,8 +722,12 @@
                 <div class="page-title">Miner Incentive Distribution</div>
                 <div class="subnet-input-wrap">
                     <label for="subnetInput" class="subnet-label">Subnet</label>
-                    <input type="number" id="subnetInput" class="subnet-input" min="0" max="255" value="71" placeholder="71" title="Subnet number (netuid)" onkeydown="if(event.key==='Enter'){ event.preventDefault(); applySubnet(); }">
+                    <input type="number" id="subnetInput" class="subnet-input" min="0" max="255" value="79" placeholder="79" title="Subnet number (netuid)" onkeydown="if(event.key==='Enter'){ event.preventDefault(); applySubnet(); }">
                     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="applySubnet()" id="applySubnetBtn" title="Load this subnet">Load</button>
+                </div>
+                <div id="subnetRegCost" class="subnet-reg-cost" style="display:none" title="">
+                    <span class="subnet-reg-cost-label" id="subnetRegCostLabel">Reg cost</span>
+                    <span class="subnet-reg-cost-value" id="subnetRegCostValue">—</span>
                 </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
@@ -200,7 +744,8 @@
                 <div class="stat-card"><div class="stat-label">Average Incentive</div><div class="stat-value success" id="avgIncentive">-</div></div>
                 <div class="stat-card"><div class="stat-label">Top Incentive</div><div class="stat-value warning" id="topIncentive">-</div></div>
                 <div class="stat-card"><div class="stat-label">Immune Miners</div><div class="stat-value info" id="immuneMinersCount">-</div></div>
-                <div class="stat-card"><div class="stat-label">My Miners</div><div class="stat-value" id="myMinersCount">-</div></div>
+                <div class="stat-card"><div class="stat-label">My Miners</div><div class="stat-value"><span id="myMinersCount">-</span><span class="stat-value-sub" id="myMinersAvgIncentive"></span></div></div>
+                <div class="stat-card" id="myValueCard" style="display:none"><div class="stat-label">My Value (Total)</div><div class="stat-value primary" id="myMinersValue">—</div></div>
             </div>
             <div class="coldkey-card">
                 <h5><i class="bi bi-key"></i> Register My Coldkeys</h5>
@@ -212,7 +757,7 @@
             </div>
             <div class="chart-card">
                 <div class="chart-header">
-                    <div class="chart-title" id="chartTitle">Miner Incentive Distribution — Subnet 71</div>
+                    <div class="chart-title" id="chartTitle">Miner Incentive Distribution — Subnet 88</div>
                     <div style="display:flex;align-items:center;gap:16px">
                         <div id="highlightInfo" class="highlight-info" style="display:none">
                             <i class="bi bi-lightbulb-fill"></i> <span id="highlightCount">0</span> miners highlighted
@@ -224,14 +769,51 @@
                 <div class="chart-container"><canvas id="incentiveChart"></canvas></div>
             </div>
             <div class="table-card">
+                <div id="feeRegimePanel" class="fee-regime-panel">
+                    <div class="fee-regime-top">
+                        <div class="fee-regime-main">
+                            <span class="fee-regime-title">DIS Fee Regime</span>
+                            <span class="fee-regime-badge" id="feeRegimeBadge">—</span>
+                            <span class="fee-regime-desc" id="feeRegimeDesc">Loading...</span>
+                        </div>
+                        <div class="fee-regime-toolbar">
+                            <label for="feeRegimeDaysSelect">History</label>
+                            <select id="feeRegimeDaysSelect" class="form-select form-select-sm" onchange="reloadFeeRegimePanel()">
+                                <option value="1">Today</option>
+                                <option value="3">3 days</option>
+                                <option value="7" selected>7 days</option>
+                                <option value="14">14 days</option>
+                                <option value="30">30 days</option>
+                            </select>
+                            <span class="fee-regime-updated" id="feeRegimeUpdated"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="feeRegimeToggleBtn" onclick="toggleFeeRegimeDetails()">Books</button>
+                        </div>
+                    </div>
+                    <div class="fee-regime-stats" id="feeRegimeStats"></div>
+                    <div class="fee-regime-charts">
+                        <div class="fee-regime-chart-block">
+                            <div class="fee-regime-chart-label">Book fees (median)</div>
+                            <div class="fee-regime-chart-wrap"><canvas id="feeRegimeMedianChart"></canvas></div>
+                        </div>
+                        <div class="fee-regime-chart-block">
+                            <div class="fee-regime-chart-label">Book fees (every book)</div>
+                            <div class="fee-regime-chart-sublabel" id="feeRegimeBooksSublabel"></div>
+                            <div class="fee-regime-chart-wrap books"><canvas id="feeRegimeBooksChart"></canvas></div>
+                        </div>
+                    </div>
+                    <div id="feeRegimeDetails" class="fee-regime-details" style="display:none">
+                        <div id="feeRegimeDetailsBody"></div>
+                    </div>
+                    <div id="feeRegimeEmpty" class="fee-regime-empty" style="display:none">No fee history yet.</div>
+                </div>
                 <div class="table-header">
-                    <div class="table-title" id="tableTitle">Miner Leaderboard — Subnet 71</div>
+                    <div class="table-title" id="tableTitle">Miner Leaderboard — Subnet 88</div>
                     <div style="display:flex;align-items:center;gap:12px">
                         <label class="filter-checkbox-label">
                             <input type="checkbox" id="showOnlyMyMiners" onchange="filterTable()" style="cursor:pointer" checked>
                             <span>My Miners Only</span>
                         </label>
-                        <input type="text" class="search-box" id="searchBox" placeholder="Search UID, Hotkey or Coldkey..." oninput="filterTable()">
+                        <input type="text" class="search-box" id="searchBox" placeholder="Search UID, Hotkey, Coldkey, Agent or Server..." oninput="filterTable()">
                     </div>
                 </div>
                 <div style="overflow-x:auto">
@@ -242,7 +824,27 @@
                                 <th onclick="sortTable('uid')">UID <i class="bi bi-arrow-down-up"></i></th>
                                 <th onclick="sortTable('hotkey')">Hotkey <i class="bi bi-arrow-down-up"></i></th>
                                 <th onclick="sortTable('incentive')">Incentive (%) <i class="bi bi-arrow-down-up"></i></th>
-                                <th>Coldkey</th>
+                                <th onclick="sortTable('coldkey')">Coldkey <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88AssetColumnHeader" style="display:none">A</th>
+                                <th id="sn88DaysColumnHeader" onclick="sortTable('days')" style="display:none">Days <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="serverColumnHeader" onclick="sortTable('server')" style="display:none">Server <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="regDateColumnHeader" onclick="sortTable('reg_date')" style="display:none">Registered <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="agentColumnHeader" onclick="sortTable('agent')" style="display:none">Agent <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="kappaColumnHeader" onclick="sortTable('kappa')" style="display:none">Kappa <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="pnlBooksColumnHeader" onclick="sortTable('pnl_books_pos')" style="display:none">PnL Books <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="realPnlColumnHeader" onclick="sortTable('real_pnl')" style="display:none">PNL <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="unrlPnlColumnHeader" onclick="sortTable('unrl_pnl')" style="display:none">U-PNL <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="volumeColumnHeader" onclick="sortTable('volume')" style="display:none">Volume <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="mkTkVolumeColumnHeader" onclick="sortTable('vol_mkr')" style="display:none">M/T Volume <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88LastColumnHeader" onclick="sortTable('sn88_last')" style="display:none">Last <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88ValueColumnHeader" onclick="sortTable('sn88_value')" style="display:none">Clip <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88ScoreColumnHeader" onclick="sortTable('sn88_score')" style="display:none">Score <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88LsrColumnHeader" onclick="sortTable('sn88_lsr')" style="display:none">LSR <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88MarColumnHeader" onclick="sortTable('sn88_mar')" style="display:none">MAR <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88RiskPctColumnHeader" onclick="sortTable('sn88_risk_percent')" style="display:none">Risk% <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88OddsPctColumnHeader" onclick="sortTable('sn88_odds_percent')" style="display:none">Odds% <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88DailyPctColumnHeader" onclick="sortTable('sn88_daily_percent')" style="display:none">Daily% <i class="bi bi-arrow-down-up"></i></th>
+                                <th id="sn88YieldPctColumnHeader" onclick="sortTable('sn88_yield_percent')" style="display:none">Rclip% <i class="bi bi-arrow-down-up"></i></th>
                             </tr>
                         </thead>
                         <tbody id="minersTableBody"><tr><td colspan="5" style="text-align:center;padding:40px">Loading...</td></tr></tbody>
@@ -257,24 +859,234 @@
     </div>
     <div class="loading-overlay" id="loadingOverlay"><div class="spinner-border text-primary" style="width:3rem;height:3rem"></div></div>
 
+    <div class="modal fade" id="minerParamsModal" tabindex="-1" aria-labelledby="minerParamsModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="minerParamsModalTitle">Miner Params</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="minerParamsMeta" class="params-meta" style="display:none"></div>
+                    <div id="minerParamsFormWrap" class="params-form-wrap" style="display:none">
+                        <table class="params-form-table">
+                            <thead>
+                                <tr><th>Param</th><th>Value</th></tr>
+                            </thead>
+                            <tbody id="minerParamsFormBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="minerParamsEmpty" class="params-empty" style="display:none"></div>
+                    <div id="minerAgentHistorySection" class="agent-history-section">
+                        <h6>Agent History</h6>
+                        <div id="minerAgentHistoryBody" class="params-form-wrap"></div>
+                    </div>
+                    <div id="minerParamsStatus" class="params-status"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="minerParamsConfirmBtn" onclick="confirmMinerParams()" style="display:none">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="uidStatusModal" tabindex="-1" aria-labelledby="uidStatusModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="uidStatusModalTitle">UID Status</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="uidStatusBody">
+                    <div class="uid-status-empty">Loading...</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="refreshUidStatus()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="minerHistoryModal" tabindex="-1" aria-labelledby="minerHistoryModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="minerHistoryModalTitle">Performance History</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="minerHistoryBody">
+                    <div class="history-toolbar">
+                        <label for="historyDaysSelect">Range</label>
+                        <select id="historyDaysSelect" class="form-select form-select-sm" style="width:auto" onchange="reloadMinerHistory()">
+                            <option value="1">Today</option>
+                            <option value="3">3 days</option>
+                            <option value="7" selected>7 days</option>
+                            <option value="14">14 days</option>
+                            <option value="30">30 days</option>
+                        </select>
+                        <span id="historyPointInfo" class="text-muted" style="font-size:0.85rem"></span>
+                    </div>
+                    <div id="minerHistoryCharts">
+                        <div class="history-chart-title">Kappa</div>
+                        <div class="history-chart-wrap"><canvas id="historyKappaChart"></canvas></div>
+                        <div class="history-chart-title">Realized PNL</div>
+                        <div class="history-chart-wrap"><canvas id="historyPnlChart"></canvas></div>
+                        <div class="history-chart-title">Volume</div>
+                        <div class="history-chart-wrap"><canvas id="historyVolumeChart"></canvas></div>
+                    </div>
+                    <div id="minerHistoryEmpty" class="uid-status-empty" style="display:none">No history snapshots yet.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="reloadMinerHistory()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="investing88MinerModal" tabindex="-1" aria-labelledby="investing88MinerModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="investing88MinerModalTitle">Investing88 Miner</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="investing88MinerBody">
+                    <div class="uid-status-empty">Loading...</div>
+                </div>
+                <div class="modal-footer">
+                    <a id="investing88DashboardLink" class="btn btn-outline-primary btn-sm sn88-meta-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
+                        <i class="bi bi-box-arrow-up-right"></i> Open on Investing88
+                    </a>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="refreshInvesting88Miner()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notifyToastContainer" class="notify-toast-container" aria-live="polite" aria-atomic="true"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
-        // Data from backend: Bittensor Metagraph (netuid 71, finney)
+        // Data from backend: Bittensor Metagraph (netuid 88, finney)
         // Structure: incentives[hotkey]=decimal, hotkeyToUid[hotkey]=uid, hotkeyToColdkey[hotkey]=coldkey
         let minersArray = [];
         let filteredMiners = [];
         let chart = null;
+        const DEFAULT_COLDKEYS = [
+            "5F7YRN7pXvyqBY1wxJ3TBC2TfprxGXzWHfhDuspt6tyfsjJL",
+            "5Eci5qYC6LNzte2zvqEnbytAZbDaCg1eEk21UGdKeBnyh5nj",
+            "5GQe7rXYeFgvUcd4rADKdFsLU9V3WMyMk1R2q5TzAJd9Zz1m",
+            "5FRtchUXj3U5QLNdZyuRcJChghV9Lye2zYMnY2AybWkaDVqY",
+            "5FRi4yz2XEECLbRT4Lttr7aP4o7929woWpStUt9G9CawDVF1",
+            "5CfQ6895NGPG6SYxixLrnaY2a4P8rnknR3dGmAJhZFeTc8Zo",
+            "5EWgdZT1HZVqrE3rfdqyx9g73N6KipkBTDTfVCekQdVrVSnJ",
+            "5CkTVgUpsyuWK5QJCBx3BU5a9RZivZtD2MyNqBdXgyNMVg47",
+            "5GREyxixYB8EJVHV1A9fQDh734tghXtt41A2MQG7VebqfQNe",
+            "5Fnwngtt7bm5Nm8zTrXeELgG88M1cDBkJzaewdDghkLfgnXW",
+            "5DUV5M1JFF3bpBpsZQ1ytNzsBJhczKXuAX8cAAQCVDWFJota",
+            "5HpPMn4pKbKmhW8Xo9U9LHwTfjQpvCLWxk3GpezJKwuoSGs5",
+            "5GBNUndCzsce7kH33GoF6oYt43RLpod8EPrpSRdwQF9MyLUX",
+            "5G3uod81PRbexLN4GJQ2QpEuzMiN9jTffRZgmrKwyTcZeJo1",
+            "5Eqm7JVh7C4NfHc6s5DS5WrFSfgsLDXuvopih6YntR574F6D",
+            "5En5ViQDeCo9hnZ6vG2EhCSLgWkJzuDS2a5h7Bbz1rMongNJ",
+            "5FehJALv2VEEFumf315e15A9mmw4QBUEviQ5Vd7r3BVxSX95",
+            "5Hovmb4Ga8z3tP4UAnjF6fwmKvqYprL82soxUXLK5WQ2HqT6",
+            "5FU5hJEBaCmpdyi3DJBjQUNBTVK9hz9hcAYKjprVMNfBc4YT",
+            "5EnxBJEc4xf5hQKt7DMYsZgH7kAq6Kw2xok1xRkduDZpzn4E",
+            "5FsLjX4Aa8W8p59T6ugrWCWBgk95aSEjHkALxnx7SZjuxpuf",
+            "5CrAkrjfZ6CfjPFPsRxuyPPjXz6vCX5pGEnBMZQ8KU5vyPpB",
+            "5FUAWyfAtJLfnChB2yHLrne5QnF4cHr66k5GaMNyUqhwcEgK",
+            "5H6shai13saCzg5p7Sx1XDsBQZGzTY8oYmC7u6kAaQBeyPnD",
+            "5HC3xg4W3bsgsu6Bqgjf4ii8mWcvJuU37JWkaiTtxvzKex8u",
+            "5HLBnZZEbWZ3XRzTjWt4F4ggtaU3EdcmMLZvpsqsqeMjcxdD",
+            "5F6nKMEs2yBNMehUYqNWyM2UCCsn3xqJhU6nBoem2KHSU1e5",
+            "5CAeBzEQYeCGCr8PNtveEfQ1qzDca4XnxT6ta4RihwhHNzx2",
+            "5EkU3zAmve5rgTteAPVTXLPzs9Q95tAu1f3PspazvaR2VRtw",
+            "5FToeoW4tZ3LjgH9joXGvtkvbdXPV9RzjDy7MwzZABLmZKqQ",
+            "5EqmAnSFH86bRu6q6zajfrHzYPYSqFkTw9pEXx18MeF1AV9x",
+            "5EUc1vYbaRGrxtTPBVLroC1YSTbM7Py8o9pYfzEcwSmurokW",
+            "5EC73L1MzPeU5M2Mn7fUCZKP9xrWMn3sjy9z9DAdWoCshWUP",
+            "5G9Ar2RodCujAwmfGw5RL7tWr1bDWdiLxHBFGetHi3wLhmKB",
+            "5C7QAeTfivvG3WLvzTSPYY3gjSCn8wDWeaVJUz6KBtmLxXhT",
+            "5FhZznriKks7KqHLcoL4Ut3jdM2zJp6RSVsRPMmPYHZuGAAx",
+            "5CXzmtm8mwVv2wXmaMSqwA7BkgSAJX2ZyewrgeywkX5VajN9",
+            "5Dr9T92NAdoi4GL5n138hkchAxXx7Q2pqbF1gVKNLgECp7hH",
+            "5D8EogQFrjcx81WwAQNg3xpEryTuzZBHYpU1B7999KH5csW9",
+            "5Chr4b1cEwPTKeWKkdMpm9wnNzmvVCbbqvXFTGuiUxoffBwi",
+            "5Ci19i9cwpSdgcAg8VQuuRN29TH6cxqYqJuDRwEyMbaCrcr5",
+            "5EHKVSarB9U2G17aEMAz7uXx4pCJMQuWNYhVLcdNbBneuq5z",
+            "5F9BHbXuaThK26eNaVWt6LDXpQxBH6Gzz9NGfpt64a3QQkSZ",
+            "5FRffJzovvSiA9B2vFc6arVTEJd5dgZX14Ug6826mA3c2Eir",
+            "5FRHjn6FTKovikhTDk7vE73Z2qM7bp6VeW6ALBQ2gs2bNerG",
+            "5DFGHSTxSJpaXhDoDjx77gswYFXZtVCVR6gA7wqM5BdQPZED",
+            "5FTbBm7iJNWDovG1fyHFfU9LwhgV56aSbf6Cxb529Cbwkoat",
+            "5E6xNwBPFSwYkySuieS3Y7vF8SGBW7GfoF3XfGZgQzkvrVoA",
+            "5DD45SAecKmhpyn9TykNoZWnc7mFgBrhvwmYNC6XSN2Ron6R",
+            "5DUxybWJH5tofLXFP1TjE7rQ1av97z8sTCShZYXdQEZNPwcg",
+            "5Fnwngtt7bm5Nm8zTrXeELgG88M1cDBkJzaewdDghkLfgnXW",
+            "5EvxmWMeWahszPbfUhNKvkc5yjV6L2SiXUtyLs96zqWmy3QC",
+            "5HYhmNU4S7T7uV9nRrMAtp9R1uAeVi5gSzujb8yCvuZPkYKP",
+            "5GjHjhtEXgkmGaSgGogYs2SbMJiUvAmdGtYSacSJzRahSfRX",
+            "5GgmeU2DDbvCahdg2S5X91UVU4zdFLUxEBEbw11g72i45SxY",
+            "5CCb9PjiicAQjC4NKmPjU7yCRqcBSNpz1FMiytYiyhyuDHgu",
+            "5Hb9gA7B21k1RJHwQ49CwQdAzMvm3hra69vQZDxBCnLiCfQY",
+            "5EUAiFpZiYcJFZVhXbp1c4GzukxeHaoYWmZb946Eemz6ST9q",
+            "5DvSXzA1boJ3CagbBWsdZzn1auGQamNyTX3T3X9R7GXrcjjX",
+            "5DcXKMJjYhjdNqfkyARk65q1uLg4ALHixdoXdTV3DbTiBLon",
+            "5DNo893avTVVEGKNJ9REMbLUWaJdXhrnaFk8njXKPSqU5GM9",
+            "5EcLapzXkpmNXPDistJuWsF9MpevmHeot8oSVZnpBFUW3c5r",
+            "5DPDALvARJN8Bsba3Yy7mx3LzKx3kVeLDs6jfCZ9iWVABonW",
+            "5FHovibREhLYEFPSyZW9sAZdiQ4RBpRXVoFrunqtnb8fw27v",
+            "5DAwDVmueCsMUVa5ko9H1Mpgoa36jQW44jUqCX7yEi4tGqaa",
+            "5HVnS4HmuPaepAnNzA2aXUf96SPDXceV3PugqG7Stsh8eErG",
+            "5DX4KnN1Js3ufjWKcMMqzjGwHjKgQn9Js7jmC2xxaeFupX5o"
+        ];
         let registeredColdkeys = [];
         let currentPage = 1;
-        let rowsPerPage = 50;
+        let rowsPerPage = 100;
         let sortColumn = 'rank';
         let sortDirection = 'asc';
         let coldkeyColors = {}; // Cache colors for each coldkey
-        let highlightedColdkeys = []; // Track which coldkeys are highlighted
+        let agentColors = {}; // Cache colors for each agent name
+        let highlightedColdkeys = DEFAULT_COLDKEYS.slice(); // Track which coldkeys are highlighted
+        let currentParamsUid = null;
+        let currentParamsData = null;
+        let currentStatusUid = null;
+        let currentHistoryUid = null;
+        let historyCharts = [];
+        let myMinerUids = [];
+        let feeRegimeData = null;
+        let feeRegimeCharts = [];
+        let investing88MinerContext = null;
+        let investing88Charts = [];
+        let investing88DaysMap = {};
+        let investing88ScoresMap = {};
+        let minerAgentInfo = {};
+        let uidMetrics = {};
+        var bookVolumeLimit = 500000;
+        var bookVolumeWarnRatio = 0.98;
+        var DISPLAY_PARAM_KEYS = [
+            'max_quantity', 'min_quantity', 'taker_ratio'
+        ];
+        var SERVER_NICKNAMES = {
+            '65.108.232.96': 'Server1',
+            '65.108.108.139': 'Server2',
+            '65.109.87.169': 'Server3',
+            '95.216.27.87': 'Server4'
+        };
+        var AGENT_PARAM_SELECT_OPTIONS = {
+            RegimeFeeHybridAgent: {
+                mode_override: ['auto', 'BOTH', 'MAKER_ONLY', 'TAKER_ONLY']
+            }
+        };
 
-        var THEME_KEY = 'sn71-dashboard-theme';
-        var THEME_USER_SET_KEY = 'sn71-dashboard-theme-user-set';
+        var THEME_KEY = 'sn88-dashboard-theme';
+        var THEME_USER_SET_KEY = 'sn88-dashboard-theme-user-set';
         function getStoredTheme() {
             try {
                 var t = localStorage.getItem(THEME_KEY);
@@ -292,6 +1104,8 @@
             if (lightBtn) { lightBtn.classList.toggle('active', !isDark); lightBtn.setAttribute('aria-pressed', !isDark); }
             if (darkBtn) { darkBtn.classList.toggle('active', isDark); darkBtn.setAttribute('aria-pressed', isDark); }
             try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+            agentColors = {};
+            if (minersArray.length > 0) renderTable();
         }
         document.addEventListener('DOMContentLoaded', function() {
             setTheme(getStoredTheme());
@@ -309,7 +1123,19 @@
         });
 
         function loadColdkeys() {
-            try { registeredColdkeys = JSON.parse(localStorage.getItem('registeredColdkeys') || '[]'); } catch(e) { registeredColdkeys = []; }
+            var netuid = getSubnetFromInput();
+            var stored = localStorage.getItem('registeredColdkeys');
+            if (stored !== null) {
+                try { registeredColdkeys = JSON.parse(stored); } catch(e) { registeredColdkeys = []; }
+            } else {
+                registeredColdkeys = [];
+            }
+            if (netuid === 88) {
+                DEFAULT_COLDKEYS.forEach(function(ck) {
+                    if (registeredColdkeys.indexOf(ck) < 0) registeredColdkeys.push(ck);
+                });
+            }
+            saveColdkeys();
             displayColdkeys();
         }
         function saveColdkeys() { localStorage.setItem('registeredColdkeys', JSON.stringify(registeredColdkeys)); }
@@ -384,6 +1210,101 @@
             'hsl(315, 70%, 58%)',  // Hot Pink
             'hsl(345, 75%, 55%)'   // Crimson
         ];
+
+        // Blue serial palette for maker agents (light theme)
+        var agentColorPaletteMakerLight = [
+            'hsl(210, 72%, 38%)',
+            'hsl(215, 75%, 42%)',
+            'hsl(220, 78%, 46%)',
+            'hsl(205, 68%, 36%)',
+            'hsl(225, 80%, 48%)',
+            'hsl(200, 65%, 34%)',
+            'hsl(218, 76%, 44%)',
+            'hsl(212, 73%, 40%)',
+            'hsl(208, 70%, 37%)',
+            'hsl(222, 79%, 47%)',
+            'hsl(203, 66%, 35%)',
+            'hsl(216, 74%, 43%)'
+        ];
+
+        // Yellow serial palette for taker agents (light theme)
+        var agentColorPaletteTakerLight = [
+            'hsl(42, 78%, 38%)',
+            'hsl(45, 82%, 42%)',
+            'hsl(48, 86%, 46%)',
+            'hsl(40, 74%, 36%)',
+            'hsl(50, 88%, 48%)',
+            'hsl(38, 70%, 34%)',
+            'hsl(46, 84%, 44%)',
+            'hsl(52, 90%, 50%)',
+            'hsl(44, 80%, 40%)',
+            'hsl(47, 85%, 45%)',
+            'hsl(41, 76%, 37%)',
+            'hsl(49, 87%, 47%)'
+        ];
+
+        // Blue serial palette for maker agents (dark theme)
+        var agentColorPaletteMakerDark = [
+            'hsl(210, 82%, 72%)',
+            'hsl(215, 85%, 74%)',
+            'hsl(220, 88%, 76%)',
+            'hsl(205, 78%, 70%)',
+            'hsl(225, 90%, 78%)',
+            'hsl(200, 75%, 68%)',
+            'hsl(218, 84%, 73%)',
+            'hsl(212, 83%, 72%)',
+            'hsl(208, 80%, 71%)',
+            'hsl(222, 87%, 77%)',
+            'hsl(203, 76%, 69%)',
+            'hsl(216, 86%, 75%)'
+        ];
+
+        // Yellow serial palette for taker agents (dark theme)
+        var agentColorPaletteTakerDark = [
+            'hsl(42, 88%, 72%)',
+            'hsl(45, 90%, 74%)',
+            'hsl(48, 92%, 76%)',
+            'hsl(40, 84%, 70%)',
+            'hsl(50, 94%, 78%)',
+            'hsl(38, 82%, 68%)',
+            'hsl(46, 89%, 73%)',
+            'hsl(52, 95%, 79%)',
+            'hsl(44, 87%, 71%)',
+            'hsl(47, 91%, 75%)',
+            'hsl(41, 85%, 69%)',
+            'hsl(49, 93%, 77%)'
+        ];
+        // Pink serial palette for other agents (light theme)
+        var agentColorPaletteOtherLight = [
+            'hsl(330, 72%, 42%)',
+            'hsl(335, 75%, 46%)',
+            'hsl(340, 78%, 48%)',
+            'hsl(325, 68%, 40%)',
+            'hsl(345, 80%, 50%)',
+            'hsl(320, 65%, 38%)',
+            'hsl(338, 76%, 47%)',
+            'hsl(332, 73%, 44%)',
+            'hsl(328, 70%, 41%)',
+            'hsl(342, 79%, 49%)',
+            'hsl(322, 66%, 39%)',
+            'hsl(336, 74%, 45%)'
+        ];
+
+        // Pink serial palette for other agents (dark theme)
+        var agentColorPaletteOtherDark = [
+            'hsl(330, 82%, 74%)',
+            'hsl(335, 85%, 76%)',
+            'hsl(340, 88%, 78%)',
+            'hsl(325, 78%, 72%)',
+            'hsl(345, 90%, 80%)',
+            'hsl(320, 75%, 70%)',
+            'hsl(338, 84%, 75%)',
+            'hsl(332, 83%, 74%)',
+            'hsl(328, 80%, 73%)',
+            'hsl(342, 87%, 79%)',
+            'hsl(322, 76%, 71%)',
+            'hsl(336, 86%, 77%)'
+        ];
         
         // Generate consistent color for a coldkey using hash
         function getColdkeyColor(coldkey) {
@@ -410,6 +1331,64 @@
             var color = coldkeyColorPalette[paletteIndex];
             coldkeyColors[coldkey] = color;
             return color;
+        }
+
+        function isDarkTheme() {
+            return document.documentElement.classList.contains('theme-dark');
+        }
+
+        function getAgentSide(agentName) {
+            if (!agentName) return 'other';
+            if (/Taker/i.test(agentName)) return 'taker';
+            if (/Maker/i.test(agentName)) return 'maker';
+            if (/^UltimateMT/i.test(agentName)) return 'taker';
+            if (/^UltimateM/i.test(agentName)) return 'maker';
+            if (/^RandomM/i.test(agentName)) return 'maker';
+            return 'other';
+        }
+
+        function getAgentColorPalette(side) {
+            var isDark = isDarkTheme();
+            if (side === 'taker') {
+                return isDark ? agentColorPaletteTakerDark : agentColorPaletteTakerLight;
+            }
+            if (side === 'maker') {
+                return isDark ? agentColorPaletteMakerDark : agentColorPaletteMakerLight;
+            }
+            return isDark ? agentColorPaletteOtherDark : agentColorPaletteOtherLight;
+        }
+
+        function hashAgentName(agentName) {
+            var hash = 0;
+            for (var i = 0; i < agentName.length; i++) {
+                hash = agentName.charCodeAt(i) + ((hash << 5) - hash);
+                hash = hash & hash;
+            }
+            return Math.abs(hash);
+        }
+
+        function getAgentColor(agentName, params) {
+            if (!agentName) return isDarkTheme() ? '#e2e8f0' : '#6c757d';
+            var side = getAgentSide(agentName);
+            var cacheKey = agentName + ':' + side + (isDarkTheme() ? ':dark' : ':light');
+            if (agentColors[cacheKey]) return agentColors[cacheKey];
+            var palette = getAgentColorPalette(side);
+            var paletteIndex = hashAgentName(agentName) % palette.length;
+            var color = palette[paletteIndex];
+            agentColors[cacheKey] = color;
+            return color;
+        }
+
+        function getAgentBlockStyle(agentName, params) {
+            var color = getAgentColor(agentName, params);
+            if (color.indexOf('hsl(') === 0) {
+                var bgAlpha = isDarkTheme() ? 0.42 : 0.22;
+                var borderAlpha = isDarkTheme() ? 0.88 : 0.45;
+                var borderWidth = isDarkTheme() ? '1.5px' : '1px';
+                return 'background:' + hslToRgba(color, bgAlpha) + '; border:' + borderWidth + ' solid ' +
+                    hslToRgba(color, borderAlpha) + '; color:' + color + ';';
+            }
+            return 'background:rgba(108,117,125,0.15); border:1px solid rgba(108,117,125,0.35); color:' + color + ';';
         }
 
         // Convert HSL to RGBA for transparency
@@ -445,12 +1424,13 @@
 
         function getSubnetFromInput() {
             var el = document.getElementById('subnetInput');
-            if (!el) return 71;
+            if (!el) return 88;
             var n = parseInt(el.value, 10);
-            if (isNaN(n) || n < 0 || n > 255) return 71;
+            if (isNaN(n) || n < 0 || n > 255) return 88;
             return n;
         }
         function applySubnet() {
+            loadColdkeys();
             loadData(true);
         }
         function loadData(forceRefresh) {
@@ -467,10 +1447,31 @@
             })
                 .then(function(metagraphData) {
                     processMetagraph(metagraphData);
-                    updateStatistics();
-                    renderChart();
-                    filterTable();
-                    updateHighlightInfo();
+                    var afterLoad = function() {
+                        updateStatistics();
+                        renderChart();
+                        filterTable();
+                        updateHighlightInfo();
+                    };
+                    var tail = Promise.resolve();
+                    if (getSubnetFromInput() === 79) {
+                        loadFeeRegimePanel(forceRefresh);
+                        tail = loadMinerAgentInfo().then(loadUidMetrics);
+                    } else if (getSubnetFromInput() === 88) {
+                        hideFeeRegimePanel();
+                        minerAgentInfo = {};
+                        uidMetrics = {};
+                        tail = loadInvesting88Days(forceRefresh);
+                    } else {
+                        hideFeeRegimePanel();
+                        minerAgentInfo = {};
+                        uidMetrics = {};
+                        investing88DaysMap = {};
+                        investing88ScoresMap = {};
+                    }
+                    return tail
+                        .then(function() { return loadSubnetRegCost(forceRefresh); })
+                        .then(afterLoad);
                 })
                 .catch(function(err) {
                     console.error(err);
@@ -483,6 +1484,1519 @@
                 });
         }
 
+        function formatFeePct(value) {
+            if (value == null || isNaN(value)) return '—';
+            var pct = value * 100;
+            return (pct >= 0 ? '+' : '') + pct.toFixed(4) + '%';
+        }
+
+        function hideFeeRegimePanel() {
+            var panel = document.getElementById('feeRegimePanel');
+            if (panel) panel.classList.remove('visible', 'regime-maker-rebate', 'regime-taker-rebate', 'regime-both-pay');
+        }
+
+        function destroyFeeRegimeCharts() {
+            feeRegimeCharts.forEach(function(c) { if (c) c.destroy(); });
+            feeRegimeCharts = [];
+        }
+
+        function renderFeeRegimeSummary(data) {
+            var panel = document.getElementById('feeRegimePanel');
+            if (!panel || getSubnetFromInput() !== 79) return;
+            feeRegimeData = data;
+            panel.classList.add('visible');
+            panel.classList.remove('regime-maker-rebate', 'regime-taker-rebate', 'regime-both-pay');
+            var regimeClass = {
+                'MAKER-REBATE': 'regime-maker-rebate',
+                'TAKER-REBATE': 'regime-taker-rebate',
+                'BOTH_PAY': 'regime-both-pay'
+            }[data.regime] || 'regime-both-pay';
+            panel.classList.add(regimeClass);
+
+            document.getElementById('feeRegimeBadge').textContent = data.regime_label || data.regime || 'DIS';
+            var cheaper = data.cheaper_side || '';
+            var gap = formatFeePct(data.median_gap);
+            document.getElementById('feeRegimeDesc').textContent =
+                (data.regime_hint || '') +
+                (cheaper ? ' · ' + cheaper + ' cheaper by ' + gap.replace('+', '') : '');
+
+            var mk = data.maker || {};
+            var tk = data.taker || {};
+            document.getElementById('feeRegimeStats').innerHTML =
+                '<span>Maker median: ' + formatFeePct(mk.median) + '</span>' +
+                '<span>Taker median: ' + formatFeePct(tk.median) + '</span>' +
+                '<span>' + (tk.rebate_books || 0) + '/' + (data.book_count || 0) + ' taker rebated</span>' +
+                '<span>' + (mk.rebate_books || 0) + '/' + (data.book_count || 0) + ' maker rebated</span>';
+
+            var updatedEl = document.getElementById('feeRegimeUpdated');
+            if (updatedEl && data.updated_at) {
+                updatedEl.textContent = 'Updated ' + new Date(data.updated_at).toLocaleTimeString();
+            }
+        }
+
+        function renderFeeRegimeHistoryCharts(globalPoints, bookPoints, liveBooks) {
+            destroyFeeRegimeCharts();
+            var chartsWrap = document.querySelector('#feeRegimePanel .fee-regime-charts');
+            var emptyEl = document.getElementById('feeRegimeEmpty');
+            globalPoints = globalPoints || [];
+            bookPoints = bookPoints || [];
+            var hasBooks = (bookPoints.length > 0) || (liveBooks && Object.keys(liveBooks).length > 0);
+            if (!globalPoints.length && !hasBooks) {
+                if (chartsWrap) chartsWrap.style.display = 'none';
+                if (emptyEl) emptyEl.style.display = '';
+                return;
+            }
+            if (chartsWrap) chartsWrap.style.display = '';
+            if (emptyEl) emptyEl.style.display = 'none';
+
+            var isDark = document.documentElement.classList.contains('theme-dark');
+            var gridColor = isDark ? 'rgba(148,163,184,0.2)' : 'rgba(0,0,0,0.08)';
+            var textColor = isDark ? '#cbd5e1' : '#495057';
+
+            function buildLineChartOptions(showLegend, xTitle) {
+                var options = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            display: !!showLegend,
+                            labels: { color: textColor, boxWidth: 12, padding: 10 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(items) {
+                                    if (!items.length) return '';
+                                    var label = items[0].label;
+                                    return xTitle ? xTitle + ' ' + label : label;
+                                },
+                                label: function(context) {
+                                    var seriesLabel = context.dataset.label || '';
+                                    var val = context.parsed.y;
+                                    if (val == null || isNaN(val)) {
+                                        return seriesLabel ? seriesLabel + ': —' : '—';
+                                    }
+                                    return (seriesLabel ? seriesLabel + ': ' : '') + formatFeePct(val);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                maxRotation: 0,
+                                minRotation: 0,
+                                color: textColor,
+                                maxTicksLimit: 16,
+                                autoSkip: true
+                            },
+                            grid: { color: gridColor }
+                        },
+                        y: {
+                            ticks: { color: textColor, callback: function(v) { return formatFeePct(v); } },
+                            grid: { color: gridColor }
+                        }
+                    }
+                };
+                if (xTitle) {
+                    options.scales.x.title = { display: true, text: xTitle, color: textColor, font: { size: 11 } };
+                }
+                return options;
+            }
+
+            function makeDataset(label, data, color, pointCount) {
+                return {
+                    label: label,
+                    data: data,
+                    borderColor: color,
+                    backgroundColor: color + '33',
+                    fill: false,
+                    tension: 0.15,
+                    pointRadius: pointCount > 40 ? 0 : 1.5,
+                    spanGaps: true
+                };
+            }
+
+            var medianCtx = document.getElementById('feeRegimeMedianChart');
+            if (medianCtx && globalPoints.length) {
+                var medianLabels = globalPoints.map(function(p) { return formatFeeRegimeLabel(p.snapshot_at); });
+                feeRegimeCharts.push(new Chart(medianCtx, {
+                    type: 'line',
+                    data: {
+                        labels: medianLabels,
+                        datasets: [
+                            makeDataset('Maker', globalPoints.map(function(p) { return p.maker_median; }), '#fd7e14', globalPoints.length),
+                            makeDataset('Taker', globalPoints.map(function(p) { return p.taker_median; }), '#0d6efd', globalPoints.length)
+                        ]
+                    },
+                    options: buildLineChartOptions(true)
+                }));
+            }
+
+            var booksPayload = null;
+            var booksSnapshotAt = null;
+            if (bookPoints.length) {
+                var latestBookPoint = bookPoints[bookPoints.length - 1];
+                booksPayload = latestBookPoint.books;
+                booksSnapshotAt = latestBookPoint.snapshot_at;
+            } else if (liveBooks) {
+                booksPayload = liveBooks;
+                booksSnapshotAt = feeRegimeData && feeRegimeData.updated_at;
+            }
+
+            var booksCtx = document.getElementById('feeRegimeBooksChart');
+            var booksSublabel = document.getElementById('feeRegimeBooksSublabel');
+            if (booksCtx && booksPayload && Object.keys(booksPayload).length) {
+                var bookIds = Object.keys(booksPayload).sort(function(a, b) {
+                    var na = parseInt(a, 10);
+                    var nb = parseInt(b, 10);
+                    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+                    return String(a).localeCompare(String(b));
+                });
+                var makerSeries = bookIds.map(function(id) {
+                    var row = booksPayload[id] || {};
+                    return row.maker != null ? row.maker : null;
+                });
+                var takerSeries = bookIds.map(function(id) {
+                    var row = booksPayload[id] || {};
+                    return row.taker != null ? row.taker : null;
+                });
+                if (booksSublabel) {
+                    booksSublabel.textContent = booksSnapshotAt
+                        ? 'Latest snapshot · ' + formatHistoryLabel(booksSnapshotAt)
+                        : '';
+                }
+                feeRegimeCharts.push(new Chart(booksCtx, {
+                    type: 'line',
+                    data: {
+                        labels: bookIds,
+                        datasets: [
+                            makeDataset('Maker', makerSeries, '#fd7e14', bookIds.length),
+                            makeDataset('Taker', takerSeries, '#0d6efd', bookIds.length)
+                        ]
+                    },
+                    options: buildLineChartOptions(true, 'Book')
+                }));
+            } else if (booksSublabel) {
+                booksSublabel.textContent = '';
+            }
+        }
+
+        function renderFeeRegimeDetails(data) {
+            var body = document.getElementById('feeRegimeDetailsBody');
+            if (!body || !data) return;
+            var mk = data.maker || {};
+            var tk = data.taker || {};
+            var html = '<div><strong>Maker</strong> range ' + formatFeePct(mk.min) + ' to ' + formatFeePct(mk.max) +
+                ' · <strong>Taker</strong> range ' + formatFeePct(tk.min) + ' to ' + formatFeePct(tk.max) + '</div>';
+            if (data.books) {
+                var takerBooks = Object.keys(data.books).map(function(bookId) {
+                    return { bookId: bookId, taker: data.books[bookId].taker };
+                }).filter(function(row) { return row.taker != null; })
+                  .sort(function(a, b) { return b.taker - a.taker; })
+                  .slice(0, 12);
+                if (takerBooks.length) {
+                    html += '<div style="margin-top:8px"><strong>Most expensive taker books</strong></div><div class="fee-regime-books">';
+                    takerBooks.forEach(function(row) {
+                        html += '<span>book ' + row.bookId + ': ' + formatFeePct(row.taker) + '</span>';
+                    });
+                    html += '</div>';
+                }
+            }
+            body.innerHTML = html;
+        }
+
+        function toggleFeeRegimeDetails() {
+            var details = document.getElementById('feeRegimeDetails');
+            var btn = document.getElementById('feeRegimeToggleBtn');
+            if (!details || !btn) return;
+            var show = details.style.display === 'none';
+            details.style.display = show ? '' : 'none';
+            btn.textContent = show ? 'Hide books' : 'Books';
+            if (show && feeRegimeData && !feeRegimeData.books) {
+                fetch('/api/fee-regime?books=1')
+                    .then(function(r) { return r.ok ? r.json() : null; })
+                    .then(function(data) {
+                        if (data) {
+                            feeRegimeData = data;
+                            renderFeeRegimeDetails(data);
+                        }
+                    })
+                    .catch(function() {});
+            } else if (show) {
+                renderFeeRegimeDetails(feeRegimeData);
+            }
+        }
+
+        function loadFeeRegimePanel(forceRefresh) {
+            if (getSubnetFromInput() !== 79) {
+                hideFeeRegimePanel();
+                return Promise.resolve();
+            }
+            var days = parseInt(document.getElementById('feeRegimeDaysSelect').value, 10) || 7;
+            var summaryParams = ['books=1'];
+            if (forceRefresh) summaryParams.push('refresh=1');
+            var summaryUrl = '/api/fee-regime?' + summaryParams.join('&');
+            var historyUrl = '/api/fee-regime/history?days=' + days;
+            return Promise.all([
+                fetch(summaryUrl).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
+                fetch(historyUrl).then(function(r) { return r.ok ? r.json() : { global_points: [], book_points: [] }; })
+            ]).then(function(results) {
+                renderFeeRegimeSummary(results[0]);
+                renderFeeRegimeHistoryCharts(
+                    results[1].global_points || [],
+                    results[1].book_points || [],
+                    results[0].books || null
+                );
+            }).catch(function(err) {
+                console.warn('Failed to load fee regime panel:', err);
+                var panel = document.getElementById('feeRegimePanel');
+                if (panel && getSubnetFromInput() === 79) {
+                    panel.classList.add('visible', 'regime-both-pay');
+                    document.getElementById('feeRegimeBadge').textContent = 'DIS';
+                    document.getElementById('feeRegimeDesc').textContent = 'Fee regime unavailable';
+                    document.getElementById('feeRegimeStats').textContent = '';
+                    destroyFeeRegimeCharts();
+                }
+            });
+        }
+
+        function reloadFeeRegimePanel() {
+            loadFeeRegimePanel(false);
+        }
+
+        function loadMinerAgentInfo() {
+            return fetch('/api/miner-params')
+                .then(function(r) { return r.ok ? r.json() : { agents: {}, uids: [] }; })
+                .then(function(data) {
+                    minerAgentInfo = data.agents || {};
+                    myMinerUids = data.uids || [];
+                })
+                .catch(function() {
+                    minerAgentInfo = {};
+                    myMinerUids = [];
+                });
+        }
+
+        function hasTrackedHistory(uid) {
+            return myMinerUids.indexOf(Number(uid)) >= 0;
+        }
+
+        function loadUidMetrics(refresh) {
+            var url = '/api/uid-metrics' + (refresh ? '?refresh=1' : '');
+            return fetch(url)
+                .then(function(r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function(data) {
+                    uidMetrics = data.metrics || {};
+                    if (data.book_volume_limit != null) bookVolumeLimit = data.book_volume_limit;
+                    if (data.book_volume_warn_ratio != null) bookVolumeWarnRatio = data.book_volume_warn_ratio;
+                })
+                .catch(function(err) {
+                    console.warn('Failed to load UID metrics:', err);
+                    uidMetrics = {};
+                });
+        }
+
+        function getUidMetrics(uid) {
+            return uidMetrics[String(uid)] || uidMetrics[uid] || null;
+        }
+
+        function formatCompactNumber(value, smallDecimals) {
+            if (value == null || Number.isNaN(Number(value))) return 'n/a';
+            var v = Number(value);
+            if (Math.abs(v) >= 1000000) return (v / 1e6).toFixed(2) + 'M';
+            if (Math.abs(v) >= 1000) return (v / 1e3).toFixed(1) + 'K';
+            smallDecimals = smallDecimals == null ? 4 : smallDecimals;
+            return String(Number(v.toFixed(smallDecimals)));
+        }
+
+        function formatMetricValue(value) {
+            return formatCompactNumber(value, 4);
+        }
+
+        function getMetricValue(uid, key) {
+            var metrics = getUidMetrics(uid);
+            if (!metrics || metrics[key] == null) return null;
+            return Number(metrics[key]);
+        }
+
+        function getBookVolumeWarnThreshold() {
+            return bookVolumeLimit * bookVolumeWarnRatio;
+        }
+
+        function getHotBookCount(uid) {
+            var metrics = getUidMetrics(uid);
+            if (!metrics || metrics.hot_book_count == null) return 0;
+            return Number(metrics.hot_book_count) || 0;
+        }
+
+        function getHotBookWarnStyle(hotCount, bookCount) {
+            if (!hotCount || hotCount <= 0) return '';
+            var share = bookCount > 0 ? hotCount / bookCount : Math.min(hotCount / 8, 1);
+            var intensity = Math.min(0.85, 0.28 + share * 0.45 + Math.min(hotCount, 8) * 0.04);
+            return 'background:rgba(220,53,69,' + intensity.toFixed(2) + '); color:#fff;';
+        }
+
+        function getHotBookRowAccent(hotCount, bookCount) {
+            if (!hotCount || hotCount <= 0) return '';
+            var share = bookCount > 0 ? hotCount / bookCount : Math.min(hotCount / 8, 1);
+            var intensity = Math.min(0.95, 0.45 + share * 0.4 + Math.min(hotCount, 8) * 0.05);
+            return 'box-shadow:inset 4px 0 0 rgba(220,53,69,' + intensity.toFixed(2) + ');';
+        }
+
+        function getBookVolumeCellStyle(volume) {
+            if (volume == null || Number.isNaN(Number(volume))) return '';
+            var v = Number(volume);
+            var warnAt = getBookVolumeWarnThreshold();
+            if (v < warnAt) return '';
+            var span = Math.max(bookVolumeLimit - warnAt, 1);
+            var progress = Math.min(1, (v - warnAt) / span);
+            var intensity = Math.min(0.9, 0.35 + progress * 0.5);
+            return 'background:rgba(220,53,69,' + intensity.toFixed(2) + '); color:#fff; font-weight:700;';
+        }
+
+        function renderMetricCell(uid, key) {
+            var val = getMetricValue(uid, key);
+            if (val == null) return '<span class="coldkey-text">-</span>';
+            return '<span class="metric-cell">' + escapeHtml(formatMetricValue(val)) + '</span>';
+        }
+
+        function renderPnlMetricCell(uid, key) {
+            var val = getMetricValue(uid, key);
+            if (val == null) return '<span class="coldkey-text">-</span>';
+            var cls = val < 0 ? ' metric-pnl-neg' : '';
+            return '<span class="metric-cell' + cls + '">' + escapeHtml(formatMetricValue(val)) + '</span>';
+        }
+
+        function formatPnlValueHtml(value) {
+            if (value == null || Number.isNaN(Number(value))) return escapeHtml('-');
+            var num = Number(value);
+            var cls = num < 0 ? ' metric-pnl-neg' : '';
+            return '<span class="metric-cell' + cls + '">' + escapeHtml(formatMetricValue(num)) + '</span>';
+        }
+
+        function renderPnlBooksCell(uid) {
+            var metrics = getUidMetrics(uid);
+            if (!metrics) return '<span class="metric-empty">-</span>';
+            var pos = metrics.pnl_books_pos;
+            var neg = metrics.pnl_books_neg;
+            if (pos == null && neg == null) return '<span class="metric-empty">-</span>';
+            pos = pos == null ? 0 : Number(pos);
+            neg = neg == null ? 0 : Number(neg);
+            return '<span class="metric-cell pnl-books-cell">' +
+                '<span class="pnl-books-pos">' + pos + '+</span> / ' +
+                '<span class="pnl-books-neg">' + neg + '-</span></span>';
+        }
+
+        function renderVolumeCell(uid) {
+            var val = getMetricValue(uid, 'volume');
+            var metrics = getUidMetrics(uid) || {};
+            var hotCount = getHotBookCount(uid);
+            var warnStyle = getHotBookWarnStyle(hotCount, metrics.book_count || 0);
+            var title = hotCount > 0
+                ? hotCount + ' book(s) at or above ' + Math.round(bookVolumeWarnRatio * 100) +
+                    '% of ' + formatCompactNumber(bookVolumeLimit, 0) + ' limit'
+                : '';
+            if (val == null) return '<span class="coldkey-text">-</span>';
+            var warnIcon = hotCount > 0 ? ' <i class="bi bi-exclamation-triangle-fill" style="font-size:0.7rem"></i>' : '';
+            return '<span class="metric-cell volume-warn-cell"' +
+                (warnStyle ? ' style="' + warnStyle + '"' : '') +
+                (title ? ' title="' + escapeHtml(title) + '"' : '') + '>' +
+                escapeHtml(formatMetricValue(val)) + warnIcon + '</span>';
+        }
+
+        function renderMkTkVolumeCell(uid) {
+            var metrics = getUidMetrics(uid);
+            if (!metrics || (metrics.vol_mkr == null && metrics.vol_tkr == null)) {
+                return '<span class="coldkey-text">-</span>';
+            }
+            return '<span class="metric-cell">' +
+                escapeHtml(formatMetricValue(metrics.vol_mkr)) + ' / ' +
+                escapeHtml(formatMetricValue(metrics.vol_tkr)) + '</span>';
+        }
+
+        function serverNameFromIp(ip) {
+            if (!ip) return '';
+            return SERVER_NICKNAMES[ip] || ip;
+        }
+
+        function getDisplayParamKeys(agentName) {
+            var keys = DISPLAY_PARAM_KEYS.slice();
+            if (agentName && /Eater/i.test(agentName)) {
+                keys.push('eat_quantity');
+            }
+            return keys;
+        }
+
+        function extractAgentInfoFromData(data) {
+            if (!data || data.agent_index == null || !data.agents) return null;
+            var agent = data.agents[data.agent_index];
+            if (!agent) return null;
+            var params = {};
+            getDisplayParamKeys(agent.name || '').forEach(function(key) {
+                if (agent.params && agent.params[key] !== undefined) params[key] = agent.params[key];
+            });
+            var minerIp = data.miner_ip || '';
+            return {
+                name: agent.name || '',
+                params: params,
+                miner_ip: minerIp,
+                server: serverNameFromIp(minerIp)
+            };
+        }
+
+        function formatParamValue(value) {
+            if (typeof value === 'boolean') return value ? 'true' : 'false';
+            if (typeof value === 'number') {
+                if (Number.isInteger(value)) return String(value);
+                var rounded = Number(value.toFixed(4));
+                return String(rounded);
+            }
+            return String(value);
+        }
+
+        function formatAgentParamsSummary(params, agentName) {
+            if (!params) return '';
+            return getDisplayParamKeys(agentName).filter(function(key) {
+                return params[key] !== undefined;
+            }).map(function(key) {
+                return '<span class="agent-param-item">' + escapeHtml(key) + ': <span class="agent-param-value">' +
+                    escapeHtml(formatParamValue(params[key])) + '</span></span>';
+            }).join('');
+        }
+
+        function getMinerAgentInfo(uid) {
+            var info = minerAgentInfo[String(uid)] || minerAgentInfo[uid];
+            if (!info) return null;
+            if (typeof info === 'string') return { name: info, params: {}, miner_ip: '', server: '' };
+            return info;
+        }
+
+        function getMinerAxonIp(uid) {
+            var miner = minersArray.find(function(m) { return m.uid === uid; });
+            return miner && miner.axonIp ? miner.axonIp : '';
+        }
+
+        function getServerInfoForUid(uid) {
+            var info = getMinerAgentInfo(uid);
+            var ip = getMinerAxonIp(uid) || (info && info.miner_ip) || '';
+            if (!ip) return { server: '', miner_ip: '' };
+            return { server: serverNameFromIp(ip), miner_ip: ip };
+        }
+
+        function getMinerServerName(uid) {
+            return getServerInfoForUid(uid).server;
+        }
+
+        function renderServerCell(m) {
+            var serverInfo = getServerInfoForUid(m.uid);
+            if (!serverInfo.server && !serverInfo.miner_ip) {
+                return '<span class="coldkey-text">-</span>';
+            }
+            var label = escapeHtml(serverInfo.server || serverInfo.miner_ip);
+            var ipLine = serverInfo.miner_ip && serverInfo.server && serverInfo.server !== serverInfo.miner_ip
+                ? '<span class="server-cell-ip">' + escapeHtml(serverInfo.miner_ip) + '</span>'
+                : '';
+            return '<span class="server-cell-label" title="' + escapeHtml(serverInfo.miner_ip || serverInfo.server) + '">' + label + '</span>' + ipLine;
+        }
+
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function setMinerParamsStatus(message, type) {
+            var el = document.getElementById('minerParamsStatus');
+            el.textContent = message || '';
+            el.className = 'params-status' + (type ? ' ' + type : '');
+        }
+
+        function showNotifyAlert(title, message, type, durationMs) {
+            var container = document.getElementById('notifyToastContainer');
+            if (!container) return;
+            type = type || 'success';
+            durationMs = durationMs == null ? 5000 : durationMs;
+            var iconClass = type === 'error' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill';
+            var toastEl = document.createElement('div');
+            toastEl.className = 'toast notify-toast notify-toast-' + type;
+            toastEl.setAttribute('role', 'alert');
+            toastEl.setAttribute('aria-live', 'assertive');
+            toastEl.setAttribute('aria-atomic', 'true');
+            toastEl.innerHTML =
+                '<div class="toast-header">' +
+                    '<i class="bi ' + iconClass + ' me-2"></i>' +
+                    '<strong class="me-auto">' + escapeHtml(title || (type === 'error' ? 'Error' : 'Success')) + '</strong>' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>' +
+                '</div>' +
+                '<div class="toast-body">' + escapeHtml(message || '') + '</div>';
+            container.appendChild(toastEl);
+            var toast = bootstrap.Toast.getOrCreateInstance(toastEl, {
+                delay: durationMs,
+                autohide: durationMs > 0
+            });
+            toastEl.addEventListener('hidden.bs.toast', function() {
+                toastEl.remove();
+            });
+            toast.show();
+        }
+
+        function getSelectedAgentIndex() {
+            var el = document.getElementById('paramAgentIndex');
+            if (!el) {
+                return currentParamsData && currentParamsData.agent_index != null
+                    ? currentParamsData.agent_index
+                    : 0;
+            }
+            return parseInt(el.value, 10);
+        }
+
+        function buildAgentSelectHtml(data, selectedIndex) {
+            return (data.agents || []).map(function(agent, idx) {
+                var name = agent && agent.name ? agent.name : ('Agent ' + idx);
+                return '<option value="' + idx + '"' + (idx === selectedIndex ? ' selected' : '') + '>' +
+                    escapeHtml(name) + ' (' + idx + ')</option>';
+            }).join('');
+        }
+
+        function getParamSelectOptions(agentName, paramKey, currentValue) {
+            var agentOptions = AGENT_PARAM_SELECT_OPTIONS[agentName];
+            if (!agentOptions || !agentOptions[paramKey]) return null;
+            var options = agentOptions[paramKey].slice();
+            var current = currentValue == null ? '' : String(currentValue);
+            if (current && options.indexOf(current) < 0) options.unshift(current);
+            return options;
+        }
+
+        function buildParamInputHtml(agent, key, value) {
+            var selectOptions = getParamSelectOptions(agent.name, key, value);
+            if (selectOptions) {
+                var current = value == null ? '' : String(value);
+                return '<select data-param-key="' + escapeHtml(key) + '" data-param-type="string">' +
+                    selectOptions.map(function(opt) {
+                        return '<option value="' + escapeHtml(opt) + '"' + (current === opt ? ' selected' : '') + '>' +
+                            escapeHtml(opt) + '</option>';
+                    }).join('') + '</select>';
+            }
+            var type = typeof value;
+            if (type === 'boolean') {
+                return '<select data-param-key="' + escapeHtml(key) + '" data-param-type="boolean">' +
+                    '<option value="true"' + (value ? ' selected' : '') + '>true</option>' +
+                    '<option value="false"' + (!value ? ' selected' : '') + '>false</option></select>';
+            }
+            if (type === 'number') {
+                return '<input type="number" step="any" data-param-key="' + escapeHtml(key) + '" data-param-type="number" value="' + escapeHtml(value) + '">';
+            }
+            return '<input type="text" data-param-key="' + escapeHtml(key) + '" data-param-type="string" value="' + escapeHtml(value) + '">';
+        }
+
+        function renderMinerParamsFormBody(data, agentIndex) {
+            var formWrap = document.getElementById('minerParamsFormWrap');
+            var formBody = document.getElementById('minerParamsFormBody');
+            var confirmBtn = document.getElementById('minerParamsConfirmBtn');
+            var agent = data.agents && data.agents[agentIndex] ? data.agents[agentIndex] : null;
+
+            if (!agent || !agent.params) {
+                formWrap.style.display = 'none';
+                confirmBtn.style.display = 'none';
+                return;
+            }
+
+            formWrap.style.display = 'block';
+            confirmBtn.style.display = 'inline-block';
+            var keys = Object.keys(agent.params);
+            formBody.innerHTML = keys.map(function(key) {
+                var value = agent.params[key];
+                var inputHtml = buildParamInputHtml(agent, key, value);
+                return '<tr><td>' + escapeHtml(key) + '</td><td>' + inputHtml + '</td></tr>';
+            }).join('');
+        }
+
+        function onParamAgentIndexChange() {
+            if (!currentParamsData) return;
+            renderMinerParamsFormBody(currentParamsData, getSelectedAgentIndex());
+        }
+
+        function renderMinerParamsForm(data, uid) {
+            currentParamsUid = uid;
+            currentParamsData = data;
+            var metaEl = document.getElementById('minerParamsMeta');
+            var emptyEl = document.getElementById('minerParamsEmpty');
+            var confirmBtn = document.getElementById('minerParamsConfirmBtn');
+
+            metaEl.style.display = 'grid';
+            emptyEl.style.display = 'none';
+            setMinerParamsStatus('', '');
+
+            var agentIndex = data.agent_index != null ? data.agent_index : 0;
+
+            var syncIp = getMinerAxonIp(uid) || data.miner_ip || 'N/A';
+            metaEl.innerHTML =
+                '<div class="params-meta-item"><label>UID</label><div class="meta-value">' + uid + '</div></div>' +
+                '<div class="params-meta-item"><label>Sync IP</label><div class="meta-value">' + escapeHtml(syncIp) + '</div></div>' +
+                '<div class="params-meta-item"><label>Poll Seconds</label><div class="meta-value">' + (data.poll_seconds != null ? data.poll_seconds : 60) + '</div></div>' +
+                '<div class="params-meta-item"><label>Agent</label><select id="paramAgentIndex" onchange="onParamAgentIndexChange()">' +
+                    buildAgentSelectHtml(data, agentIndex) + '</select></div>';
+
+            if (!data.agents || !data.agents.length) {
+                document.getElementById('minerParamsFormWrap').style.display = 'none';
+                confirmBtn.style.display = 'none';
+                emptyEl.style.display = 'block';
+                emptyEl.textContent = 'No agents found in params file.';
+                loadAgentHistory(uid);
+                return;
+            }
+
+            renderMinerParamsFormBody(data, agentIndex);
+            loadAgentHistory(uid);
+        }
+
+        function collectMinerParamsPayload() {
+            var params = {};
+            document.querySelectorAll('[data-param-key]').forEach(function(input) {
+                var key = input.getAttribute('data-param-key');
+                var type = input.getAttribute('data-param-type');
+                var raw = input.value;
+                if (type === 'boolean') params[key] = raw === 'true';
+                else if (type === 'number') params[key] = raw.includes('.') ? parseFloat(raw) : parseInt(raw, 10);
+                else params[key] = raw;
+            });
+            var syncIp = getMinerAxonIp(currentParamsUid);
+            return {
+                agent_index: getSelectedAgentIndex(),
+                params: params,
+                sync_ip: syncIp || undefined
+            };
+        }
+
+        function confirmMinerParams() {
+            if (currentParamsUid == null) return;
+            var confirmBtn = document.getElementById('minerParamsConfirmBtn');
+            var pendingClose = false;
+            confirmBtn.disabled = true;
+            setMinerParamsStatus('Saving and syncing...', '');
+            fetch('/api/miner-params/' + currentParamsUid, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(collectMinerParamsPayload())
+            })
+                .then(function(r) {
+                    return r.json().then(function(body) {
+                        if (!r.ok) {
+                            var detail = body.detail;
+                            if (Array.isArray(detail)) {
+                                detail = detail.map(function(d) { return d.msg || JSON.stringify(d); }).join(', ');
+                            }
+                            throw new Error(detail || ('HTTP ' + r.status));
+                        }
+                        return body;
+                    });
+                })
+                .then(function(result) {
+                    currentParamsData = result.data;
+                    var info = extractAgentInfoFromData(result.data);
+                    if (info) minerAgentInfo[String(currentParamsUid)] = info;
+                    renderTable();
+                    loadAgentHistory(currentParamsUid);
+                    if (result.rsynced) {
+                        pendingClose = true;
+                        var syncMsg = 'Saved and synced to ' + result.miner_ip + ':' + result.remote_path;
+                        
+                        showNotifyAlert(
+                            'Params synced',
+                            'UID ' + currentParamsUid + ' saved and synced to ' + result.miner_ip,
+                            'success',
+                            5000
+                        );
+                        confirmBtn.disabled = true;
+                        setTimeout(function() {
+                            bootstrap.Modal.getOrCreateInstance(document.getElementById('minerParamsModal')).hide();
+                            currentParamsUid = null;
+                            currentParamsData = null;
+                            setMinerParamsStatus('', '');
+                            confirmBtn.disabled = false;
+                        }, 3000);
+                    } else {
+                        renderMinerParamsForm(result.data, currentParamsUid);
+                        var rsyncErr = 'Saved locally, but rsync failed: ' + (result.rsync_message || 'unknown error');
+                        setMinerParamsStatus(rsyncErr, 'error');
+                        showNotifyAlert('Sync failed', rsyncErr, 'error', 7000);
+                    }
+                })
+                .catch(function(err) {
+                    setMinerParamsStatus('Save failed: ' + err.message, 'error');
+                    showNotifyAlert('Save failed', err.message, 'error', 7000);
+                })
+                .finally(function() {
+                    if (!pendingClose) confirmBtn.disabled = false;
+                });
+        }
+
+        function formatAgentHistoryTime(entry) {
+            if (!entry) return '—';
+            if (entry.switched_at && entry.switched_at_tz === 'Asia/Tokyo' && entry.switched_at.indexOf('T') < 0) {
+                return entry.switched_at + ' JST';
+            }
+            var iso = entry.switched_at_utc_iso || entry.switched_at;
+            if (iso && iso.indexOf('T') >= 0) {
+                var d = new Date(iso);
+                if (!isNaN(d.getTime())) {
+                    return formatInstantInTokyo(d).title;
+                }
+            }
+            return '—';
+        }
+
+        function formatAgentHistorySource(source) {
+            if (source === 'params_update') return 'params';
+            if (source === 'auto_volume') return 'Auto (hot books)';
+            if (source === 'manual') return 'Manual';
+            return source || '—';
+        }
+
+        function renderAgentHistoryBody(entries, loading) {
+            var body = document.getElementById('minerAgentHistoryBody');
+            if (!body) return;
+            if (loading) {
+                body.innerHTML = '<div class="params-empty" style="display:block">Loading history…</div>';
+                return;
+            }
+            if (!entries || !entries.length) {
+                body.innerHTML = '<div class="params-empty" style="display:block;color:#6c757d;font-size:0.82rem">No agent switches recorded yet.</div>';
+                return;
+            }
+            var rows = entries.map(function(entry) {
+                var syncBadge = entry.rsynced === false
+                    ? ' <span style="color:#dc3545;font-size:0.7rem">sync failed</span>'
+                    : '';
+                var changeCell;
+                if (entry.source === 'params_update') {
+                    var agentName = escapeHtml(entry.new_agent || ('#' + entry.new_agent_index));
+                    var extra = entry.extra && entry.extra.params
+                        ? Object.entries(entry.extra.params).map(function(kv) {
+                            return escapeHtml(kv[0]) + ': ' + escapeHtml(String(kv[1]));
+                          }).join(' · ')
+                        : '';
+                    changeCell = agentName + (extra ? ' <span style="color:#94a3b8;font-size:0.75rem">(' + extra + ')</span>' : '') + syncBadge;
+                } else {
+                    var prev = escapeHtml(entry.previous_agent || ('#' + entry.previous_agent_index));
+                    var next = escapeHtml(entry.new_agent || ('#' + entry.new_agent_index));
+                    changeCell = prev + ' <span class="agent-history-arrow">→</span> ' + next + syncBadge;
+                }
+                return '<tr>' +
+                    '<td style="white-space:nowrap">' + escapeHtml(formatAgentHistoryTime(entry)) + '</td>' +
+                    '<td><span class="agent-history-source">' + escapeHtml(formatAgentHistorySource(entry.source)) + '</span></td>' +
+                    '<td>' + changeCell + '</td>' +
+                    '</tr>';
+            }).join('');
+            body.innerHTML = '<table class="agent-history-table"><thead><tr>' +
+                '<th>When</th><th>Source</th><th>Change</th></tr></thead><tbody>' +
+                rows + '</tbody></table>';
+        }
+
+        function loadAgentHistory(uid) {
+            renderAgentHistoryBody(null, true);
+            return fetch('/api/agent-history/' + uid + '?limit=30')
+                .then(function(r) { return r.ok ? r.json() : { entries: [] }; })
+                .then(function(data) {
+                    renderAgentHistoryBody(data.entries || []);
+                    return data;
+                })
+                .catch(function() {
+                    renderAgentHistoryBody([]);
+                });
+        }
+
+        function showMinerParamsEmpty(uid, message) {
+            currentParamsUid = null;
+            currentParamsData = null;
+            document.getElementById('minerParamsMeta').style.display = 'none';
+            document.getElementById('minerParamsFormWrap').style.display = 'none';
+            document.getElementById('minerParamsConfirmBtn').style.display = 'none';
+            var emptyEl = document.getElementById('minerParamsEmpty');
+            emptyEl.style.display = 'block';
+            emptyEl.textContent = message;
+            setMinerParamsStatus('', '');
+        }
+
+        function showMinerParams(uid) {
+            var modalEl = document.getElementById('minerParamsModal');
+            var titleEl = document.getElementById('minerParamsModalTitle');
+            titleEl.textContent = 'Miner Params — UID ' + uid;
+            showMinerParamsEmpty(uid, 'Loading...');
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            loadAgentHistory(uid);
+            fetch('/api/miner-params/' + uid)
+                .then(function(r) {
+                    if (r.status === 404) {
+                        showMinerParamsEmpty(uid, 'No params file found for UID ' + uid + '. Add 79Miners/params/run_miner_' + uid + '.json to enable params for this miner.');
+                        return null;
+                    }
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function(data) {
+                    if (data) renderMinerParamsForm(data, uid);
+                })
+                .catch(function(err) {
+                    showMinerParamsEmpty(uid, 'Failed to load params: ' + err.message);
+                });
+        }
+
+        function formatStatusValue(value) {
+            return formatCompactNumber(value, 4);
+        }
+
+        function renderUidStatusBody(data) {
+            var bodyEl = document.getElementById('uidStatusBody');
+            if (!data.active) {
+                bodyEl.innerHTML = '<div class="uid-status-empty">No TAOS metrics reported for UID ' + data.uid +
+                    ' (inactive or never scored).</div>';
+                return;
+            }
+            var summaryRows = (data.summary || []).map(function(item) {
+                var isPnl = /pnl/i.test(item.label || '') || /pnl/i.test(item.gauge || '');
+                var valueHtml = isPnl
+                    ? formatPnlValueHtml(item.value)
+                    : escapeHtml(formatStatusValue(item.value));
+                return '<tr><td>' + escapeHtml(item.label) + '</td><td>' + valueHtml + '</td></tr>';
+            }).join('');
+            var html = '<div class="uid-status-meta">TAOS metrics for subnet 79 · cached up to 60s</div>' +
+                '<div class="uid-status-section">' +
+                '<h6>Summary</h6>' +
+                '<div class="params-form-wrap"><table class="params-form-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>' +
+                summaryRows + '</tbody></table></div></div>';
+            if (data.books && data.books.length) {
+                var stats = data.book_stats || {};
+                html += '<div class="uid-status-section"><h6>Per-book breakdown</h6>' +
+                    '<div class="uid-status-meta">' + data.books.length + ' books · ' +
+                    (stats.without_weighted_kappa || 0) + ' without weighted_kappa · ' +
+                    'pnl books: ' + (stats.positive_pnl_books || 0) + '+ / ' + (stats.negative_pnl_books || 0) + '- · ' +
+                    'total vol ' + formatStatusValue(stats.total_daily_volume) + ' · ' +
+                    'total pnl ' + formatStatusValue(stats.total_realized_pnl) +
+                    (stats.pnl_volume_ratio_pct != null ? ' (' + Number(stats.pnl_volume_ratio_pct).toFixed(4) + '%)' : '') +
+                    '</div><div class="params-form-wrap"><table class="params-form-table"><thead><tr>' +
+                    '<th>Book</th><th>w_kappa</th><th>kappa</th><th>vol_day</th><th>real_pnl</th><th>mkr_fee%</th><th>tkr_fee%</th><th>act_f</th>' +
+                    '</tr></thead><tbody>' +
+                    data.books.map(function(book) {
+                        var volStyle = getBookVolumeCellStyle(book.daily_volume);
+                        var volTitle = volStyle
+                            ? 'Book volume near ' + formatCompactNumber(bookVolumeLimit, 0) + ' limit'
+                            : '';
+                        return '<tr><td>' + escapeHtml(book.book_id) + '</td>' +
+                            '<td>' + escapeHtml(formatStatusValue(book.weighted_kappa)) + '</td>' +
+                            '<td>' + escapeHtml(formatStatusValue(book.kappa)) + '</td>' +
+                            '<td' + (volStyle ? ' style="' + volStyle + '"' : '') +
+                            (volTitle ? ' title="' + escapeHtml(volTitle) + '"' : '') + '>' +
+                            escapeHtml(formatStatusValue(book.daily_volume)) + '</td>' +
+                            '<td>' + formatPnlValueHtml(book.realized_pnl) + '</td>' +
+                            '<td>' + escapeHtml(formatStatusValue((book.fees_maker_rate || 0) * 100)) + '</td>' +
+                            '<td>' + escapeHtml(formatStatusValue((book.fees_taker_rate || 0) * 100)) + '</td>' +
+                            '<td>' + escapeHtml(formatStatusValue(book.activity_factor)) + '</td></tr>';
+                    }).join('') +
+                    '</tbody></table></div></div>';
+            }
+            bodyEl.innerHTML = html;
+        }
+
+        function loadUidStatus(uid, refresh) {
+            var bodyEl = document.getElementById('uidStatusBody');
+            bodyEl.innerHTML = '<div class="uid-status-empty">Loading TAOS metrics...</div>';
+            var url = '/api/uid-status/' + uid + '?books=1' + (refresh ? '&refresh=1' : '');
+            return fetch(url)
+                .then(function(r) {
+                    return r.json().then(function(body) {
+                        if (!r.ok) {
+                            var detail = body.detail;
+                            if (Array.isArray(detail)) {
+                                detail = detail.map(function(d) { return d.msg || JSON.stringify(d); }).join(', ');
+                            }
+                            throw new Error(detail || ('HTTP ' + r.status));
+                        }
+                        return body;
+                    });
+                })
+                .then(function(data) {
+                    renderUidStatusBody(data);
+                    return data;
+                })
+                .catch(function(err) {
+                    bodyEl.innerHTML = '<div class="uid-status-empty">Failed to load UID status: ' + escapeHtml(err.message) + '</div>';
+                });
+        }
+
+        function showUidStatus(uid) {
+            if (getSubnetFromInput() !== 79) return;
+            currentStatusUid = uid;
+            document.getElementById('uidStatusModalTitle').textContent = 'UID Status — UID ' + uid;
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('uidStatusModal')).show();
+            loadUidStatus(uid, false);
+        }
+
+        function refreshUidStatus() {
+            if (currentStatusUid == null) return;
+            loadUidStatus(currentStatusUid, true);
+        }
+
+        function formatSn88Money(value) {
+            if (value == null || isNaN(Number(value))) return '—';
+            return formatCompactNumber(Number(value), 2);
+        }
+
+        function formatSn88Pct(value, digits) {
+            if (value == null || isNaN(Number(value))) return '—';
+            digits = digits == null ? 2 : digits;
+            return Number(value).toFixed(digits) + '%';
+        }
+
+        function formatSn88Number(value, digits) {
+            if (value == null || isNaN(Number(value))) return '—';
+            digits = digits == null ? 4 : digits;
+            return Number(value).toFixed(digits);
+        }
+
+        function applyInvesting88Days() {
+            if (getSubnetFromInput() !== 88 || !minersArray.length) return;
+            minersArray.forEach(function(m) {
+                var row = investing88DaysMap[String(m.uid)];
+                m.days = row != null ? Number(row.days) : null;
+            });
+        }
+
+        function loadInvesting88Days(forceRefresh) {
+            if (getSubnetFromInput() !== 88) return Promise.resolve();
+            var url = '/api/investing88/days';
+            var needsRefresh = forceRefresh || Object.keys(investing88ScoresMap).length === 0;
+            if (needsRefresh) url += '?refresh=1';
+            return fetch(url).then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            }).then(function(data) {
+                investing88DaysMap = data.days || {};
+                investing88ScoresMap = data.scores || {};
+                applyInvesting88Days();
+                return data;
+            }).catch(function(err) {
+                console.warn('Failed to load Investing88 days:', err);
+                investing88DaysMap = {};
+                investing88ScoresMap = {};
+            });
+        }
+
+        function getSn88Score(uid, field) {
+            var s = investing88ScoresMap[String(uid)];
+            if (!s) return null;
+            var v = s[field];
+            return (v == null || isNaN(Number(v))) ? null : Number(v);
+        }
+
+        function renderSn88AssetCell(uid) {
+            var asset = getSn88Score(uid, 'asset');
+            if (asset == null) return '<span class="coldkey-text">—</span>';
+            var sym = asset === 0 ? 'τ' : asset === 1 ? '$' : String(asset);
+            return '<span class="metric-cell">' + sym + '</span>';
+        }
+
+        function renderSn88ScoreCell(uid, field, fmt) {
+            var val = getSn88Score(uid, field);
+            if (val == null) return '<span class="coldkey-text">—</span>';
+            var str, cls = 'metric-cell';
+            if (fmt === 'clip') {
+                var n = Number(val);
+                str = n >= 1e6 ? (n / 1e6).toFixed(2) + 'M'
+                    : n >= 1e3 ? (n / 1e3).toFixed(2) + 'K'
+                    : n.toFixed(2);
+            } else if (fmt === 'pct_red') {
+                str = formatSn88Pct(val, 2); cls = 'metric-cell text-danger';
+            } else if (fmt === 'pct_green') {
+                str = formatSn88Pct(val, 2); cls = 'metric-cell text-success';
+            } else {
+                str = fmt === 'int'   ? String(Math.round(Number(val)))
+                    : fmt === 'pct2'  ? formatSn88Pct(val, 2)
+                    : fmt === 'pct4'  ? formatSn88Pct(val, 4)
+                    : fmt === 'money' ? formatSn88Money(val)
+                    : fmt === 'num4'  ? formatSn88Number(val, 4)
+                    : fmt === 'num2'  ? formatSn88Number(val, 2)
+                    : String(val);
+            }
+            return '<span class="' + cls + '">' + escapeHtml(str) + '</span>';
+        }
+
+        function renderInvesting88Allocations(allocations) {
+            var entries = Object.keys(allocations || {}).map(function(symbol) {
+                return { symbol: symbol, weight: allocations[symbol] };
+            }).sort(function(a, b) { return (b.weight || 0) - (a.weight || 0); });
+            if (!entries.length) return '<div class="uid-status-empty">No allocation data</div>';
+            return '<div class="sn88-allocation-grid">' + entries.map(function(item) {
+                return '<div class="sn88-allocation-item">' + escapeHtml(item.symbol) + ' · ' +
+                    escapeHtml(formatSn88Pct((item.weight || 0) * 100, 2)) + '</div>';
+            }).join('') + '</div>';
+        }
+
+        function renderInvesting88Miner(data) {
+            var bodyEl = document.getElementById('investing88MinerBody');
+            var linkEl = document.getElementById('investing88DashboardLink');
+            if (!bodyEl) return;
+            if (!data || !data.found) {
+                bodyEl.innerHTML = '<div class="uid-status-empty">' +
+                    escapeHtml((data && data.error) || 'Miner not found on Investing88 dashboard') + '</div>';
+                if (linkEl) linkEl.style.display = 'none';
+                return;
+            }
+            var score = data.score || {};
+            if (linkEl) {
+                linkEl.href = data.dashboard_url || '#';
+                linkEl.style.display = data.dashboard_url ? '' : 'none';
+            }
+            var meta = 'Score date ' + escapeHtml(score.date || '—') +
+                ' · Rank #' + escapeHtml(String(score.rank != null ? score.rank : '—')) +
+                ' · ' + escapeHtml(score.asset_label || 'Asset —') +
+                (score.days != null ? ' · ' + escapeHtml(String(score.days)) + ' days live' : '');
+            if (data.cache_updated_at_tokyo) {
+                meta += ' · cached ' + escapeHtml(data.cache_updated_at_tokyo) + ' JST';
+            } else if (data.fetched_at) {
+                meta += ' · live ' + escapeHtml(new Date(data.fetched_at).toLocaleString());
+            }
+            if (data.days_info && data.days_info.cash != null) {
+                meta += ' · cash ' + escapeHtml(formatSn88Pct(Number(data.days_info.cash) * 100, 2));
+            }
+            var scoreRows = [
+                ['Score', formatSn88Number(score.score, 2)],
+                ['APY', formatSn88Pct(score.apy, 2)],
+                ['Value', formatSn88Money(score.value)],
+                ['Swap', formatSn88Money(score.swap)],
+                ['Daily %', formatSn88Pct(score.daily_percent, 4)],
+                ['Yield %', formatSn88Pct(score.yield_percent, 2)],
+                ['Risk %', formatSn88Pct(score.risk_percent, 2)],
+                ['Odds %', formatSn88Pct(score.odds_percent, 2)],
+                ['LSR', formatSn88Number(score.lsr, 4)],
+                ['MAR', formatSn88Number(score.mar, 2)],
+                ['Last rebalance (days ago)', score.last != null ? String(score.last) : '—']
+            ];
+            var html = '<div class="uid-status-meta">' + meta + '</div>' +
+                '<div class="uid-status-section"><h6>Score summary</h6><div class="params-form-wrap"><table class="params-form-table"><tbody>' +
+                scoreRows.map(function(row) {
+                    return '<tr><td>' + escapeHtml(row[0]) + '</td><td>' + escapeHtml(row[1]) + '</td></tr>';
+                }).join('') + '</tbody></table></div></div>';
+
+            var latest = data.latest_strategy;
+            if (latest) {
+                html += '<div class="uid-status-section"><h6>Latest strategy · ' + escapeHtml(latest.date || '') +
+                    (latest.time ? ' ' + escapeHtml(latest.time) : '') + '</h6>' +
+                    '<div class="uid-status-meta">' + escapeHtml(latest.asset_label || '') +
+                    (latest.value != null ? ' · value ' + escapeHtml(formatSn88Money(latest.value)) : '') +
+                    '</div>' + renderInvesting88Allocations(latest.allocations) + '</div>';
+            }
+
+            if (data.holdings && data.holdings.length) {
+                html += '<div class="uid-status-section"><h6>Holdings · ' + escapeHtml(data.holdings[0].date || score.date || '') + '</h6>' +
+                    '<div class="params-form-wrap"><table class="params-form-table"><thead><tr>' +
+                    '<th>Symbol</th><th>Close</th><th>Qty</th><th>Value</th><th>Weight</th>' +
+                    '</tr></thead><tbody>' +
+                    data.holdings.map(function(row) {
+                        return '<tr><td>' + escapeHtml(row.symbol) + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Money(row.close)) + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Number(row.quantity, 2)) + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Money(row.value)) + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Pct((row.weight || 0) * 100, 2)) + '</td></tr>';
+                    }).join('') + '</tbody></table></div></div>';
+            }
+
+            if (data.pnl_history && data.pnl_history.length) {
+                html += '<div class="uid-status-section"><h6>PNL history</h6>' +
+                    '<div class="history-chart-wrap"><canvas id="investing88PnlChart"></canvas></div>' +
+                    '<div class="params-form-wrap" style="margin-top:10px"><table class="params-form-table"><thead><tr>' +
+                    '<th>Date</th><th>Open</th><th>High</th><th>Low</th><th>Close</th>' +
+                    '</tr></thead><tbody id="investing88PnlTableBody"></tbody></table></div></div>';
+            }
+
+            if (data.strategy_history && data.strategy_history.length > 1) {
+                html += '<div class="uid-status-section"><h6>Strategy history</h6><div class="params-form-wrap"><table class="params-form-table"><thead><tr>' +
+                    '<th>Date</th><th>Time</th><th>Asset</th><th>Value</th><th>Top holdings</th>' +
+                    '</tr></thead><tbody>' +
+                    data.strategy_history.map(function(row) {
+                        var top = Object.keys(row.allocations || {}).map(function(symbol) {
+                            return { symbol: symbol, weight: row.allocations[symbol] };
+                        }).sort(function(a, b) { return (b.weight || 0) - (a.weight || 0); }).slice(0, 5)
+                          .map(function(item) { return item.symbol + ' ' + formatSn88Pct((item.weight || 0) * 100, 1); })
+                          .join(', ');
+                        return '<tr><td>' + escapeHtml(row.date || '—') + '</td>' +
+                            '<td>' + escapeHtml(row.time || '—') + '</td>' +
+                            '<td>' + escapeHtml(row.asset_label || '—') + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Money(row.value)) + '</td>' +
+                            '<td>' + escapeHtml(top || '—') + '</td></tr>';
+                    }).join('') + '</tbody></table></div></div>';
+            }
+
+            if (data.errors && data.errors.length) {
+                html += '<div class="uid-status-meta">Partial data: ' + escapeHtml(data.errors.join('; ')) + '</div>';
+            }
+            bodyEl.innerHTML = html;
+            if (data.pnl_history && data.pnl_history.length) {
+                var tableBody = document.getElementById('investing88PnlTableBody');
+                if (tableBody) {
+                    tableBody.innerHTML = data.pnl_history.map(function(row) {
+                        return '<tr><td>' + escapeHtml(row.date || '—') + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Money(row.open)) + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Money(row.high)) + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Money(row.low)) + '</td>' +
+                            '<td>' + escapeHtml(formatSn88Money(row.close)) + '</td></tr>';
+                    }).join('');
+                }
+                renderInvesting88PnlChart(data.pnl_history);
+            }
+        }
+
+        function destroyInvesting88Charts() {
+            investing88Charts.forEach(function(c) { if (c) c.destroy(); });
+            investing88Charts = [];
+        }
+
+        function renderInvesting88PnlChart(pnlHistory) {
+            destroyInvesting88Charts();
+            var ctx = document.getElementById('investing88PnlChart');
+            if (!ctx || !pnlHistory || !pnlHistory.length) return;
+
+            var sorted = pnlHistory.slice().sort(function(a, b) {
+                return String(a.date || '').localeCompare(String(b.date || ''));
+            });
+            var labels = sorted.map(function(row) { return row.date || '—'; });
+            var isDark = document.documentElement.classList.contains('theme-dark');
+            var gridColor = isDark ? 'rgba(148,163,184,0.2)' : 'rgba(0,0,0,0.08)';
+            var textColor = isDark ? '#cbd5e1' : '#495057';
+
+            function moneyTick(v) {
+                if (v == null || isNaN(v)) return '—';
+                return formatSn88Money(v);
+            }
+
+            investing88Charts.push(new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Close',
+                            data: sorted.map(function(row) { return row.close; }),
+                            borderColor: '#198754',
+                            backgroundColor: 'rgba(25,135,84,0.15)',
+                            fill: true,
+                            tension: 0.2,
+                            pointRadius: sorted.length > 30 ? 0 : 2,
+                            spanGaps: true,
+                            order: 1
+                        },
+                        {
+                            label: 'High',
+                            data: sorted.map(function(row) { return row.high; }),
+                            borderColor: isDark ? '#86efac' : '#28a745',
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.2,
+                            pointRadius: 0,
+                            borderDash: [4, 3],
+                            spanGaps: true,
+                            order: 2
+                        },
+                        {
+                            label: 'Low',
+                            data: sorted.map(function(row) { return row.low; }),
+                            borderColor: isDark ? '#fca5a5' : '#dc3545',
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.2,
+                            pointRadius: 0,
+                            borderDash: [4, 3],
+                            spanGaps: true,
+                            order: 3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: textColor, boxWidth: 12, padding: 10 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    var row = sorted[context.dataIndex] || {};
+                                    if (context.dataset.label === 'Close') {
+                                        return [
+                                            'Close: ' + moneyTick(row.close),
+                                            'Open: ' + moneyTick(row.open),
+                                            'High: ' + moneyTick(row.high),
+                                            'Low: ' + moneyTick(row.low)
+                                        ];
+                                    }
+                                    return context.dataset.label + ': ' + moneyTick(context.parsed.y);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { maxRotation: 45, minRotation: 45, color: textColor, maxTicksLimit: 14 },
+                            grid: { color: gridColor }
+                        },
+                        y: {
+                            ticks: {
+                                color: textColor,
+                                callback: function(v) { return formatCompactNumber(v, 1); }
+                            },
+                            grid: { color: gridColor }
+                        }
+                    }
+                }
+            }));
+        }
+
+        function loadInvesting88Miner(uid, rank, hotkey, refresh) {
+            destroyInvesting88Charts();
+            var bodyEl = document.getElementById('investing88MinerBody');
+            if (bodyEl) bodyEl.innerHTML = '<div class="uid-status-empty">Loading Investing88 data...</div>';
+            var params = [];
+            if (hotkey) params.push('hotkey=' + encodeURIComponent(hotkey));
+            if (rank != null) params.push('rank=' + encodeURIComponent(rank));
+            if (refresh) params.push('refresh=1');
+            var url = '/api/investing88/miner/' + uid + (params.length ? '?' + params.join('&') : '');
+            return fetch(url)
+                .then(function(r) {
+                    return r.json().then(function(body) {
+                        if (!r.ok) {
+                            var detail = body.detail;
+                            if (Array.isArray(detail)) {
+                                detail = detail.map(function(d) { return d.msg || JSON.stringify(d); }).join(', ');
+                            }
+                            throw new Error(detail || ('HTTP ' + r.status));
+                        }
+                        return body;
+                    });
+                })
+                .then(function(data) {
+                    renderInvesting88Miner(data);
+                })
+                .catch(function(err) {
+                    if (bodyEl) {
+                        bodyEl.innerHTML = '<div class="uid-status-empty">Failed to load Investing88 data: ' +
+                            escapeHtml(err.message) + '</div>';
+                    }
+                });
+        }
+
+        function showInvesting88Miner(uid, rank, hotkey) {
+            if (getSubnetFromInput() !== 88) return;
+            investing88MinerContext = { uid: uid, rank: rank, hotkey: hotkey };
+            document.getElementById('investing88MinerModalTitle').textContent =
+                'Investing88 Miner — UID ' + uid + (hotkey ? ' · ' + hotkey.substring(0, 8) + '...' : '');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('investing88MinerModal')).show();
+            loadInvesting88Miner(uid, rank, hotkey, false);
+        }
+
+        function refreshInvesting88Miner() {
+            if (!investing88MinerContext) return;
+            loadInvesting88Miner(
+                investing88MinerContext.uid,
+                investing88MinerContext.rank,
+                investing88MinerContext.hotkey,
+                true
+            );
+        }
+
+        function destroyHistoryCharts() {
+            historyCharts.forEach(function(c) { if (c) c.destroy(); });
+            historyCharts = [];
+        }
+
+        function formatHistoryLabel(iso) {
+            if (!iso) return '';
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) return iso;
+            return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatFeeRegimeLabel(iso) {
+            if (!iso) return '';
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) return iso;
+            var mo = d.getMonth() + 1;
+            var dy = d.getDate();
+            var hh = String(d.getHours()).padStart(2, '0');
+            var mm = String(d.getMinutes()).padStart(2, '0');
+            return mo + '/' + dy + ' ' + hh + ':' + mm;
+        }
+
+        function renderHistoryCharts(points) {
+            destroyHistoryCharts();
+            var chartsWrap = document.getElementById('minerHistoryCharts');
+            var emptyEl = document.getElementById('minerHistoryEmpty');
+            var infoEl = document.getElementById('historyPointInfo');
+            if (!points || points.length === 0) {
+                chartsWrap.style.display = 'none';
+                emptyEl.style.display = '';
+                if (infoEl) infoEl.textContent = '';
+                return;
+            }
+            chartsWrap.style.display = '';
+            emptyEl.style.display = 'none';
+            if (infoEl) infoEl.textContent = points.length + ' snapshots';
+            var labels = points.map(function(p) { return formatHistoryLabel(p.snapshot_at); });
+            var isDark = document.documentElement.classList.contains('theme-dark');
+            var gridColor = isDark ? 'rgba(148,163,184,0.2)' : 'rgba(0,0,0,0.08)';
+            var textColor = isDark ? '#cbd5e1' : '#495057';
+            var commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        ticks: { maxRotation: 45, minRotation: 45, color: textColor, maxTicksLimit: 12 },
+                        grid: { color: gridColor }
+                    },
+                    y: {
+                        ticks: { color: textColor },
+                        grid: { color: gridColor }
+                    }
+                }
+            };
+            var specs = [
+                { id: 'historyKappaChart', key: 'kappa', color: '#0d6efd', label: 'Kappa' },
+                { id: 'historyPnlChart', key: 'real_pnl', color: '#198754', label: 'Realized PNL' }
+            ];
+            specs.forEach(function(spec) {
+                var ctx = document.getElementById(spec.id);
+                if (!ctx) return;
+                historyCharts.push(new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: spec.label,
+                            data: points.map(function(p) { return p[spec.key]; }),
+                            borderColor: spec.color,
+                            backgroundColor: spec.color + '33',
+                            fill: true,
+                            tension: 0.2,
+                            pointRadius: points.length > 40 ? 0 : 2,
+                            spanGaps: true
+                        }]
+                    },
+                    options: commonOptions
+                }));
+            });
+            var volCtx = document.getElementById('historyVolumeChart');
+            if (volCtx) {
+                var pr = points.length > 40 ? 0 : 2;
+                historyCharts.push(new Chart(volCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Total',
+                                data: points.map(function(p) { return p.volume; }),
+                                borderColor: '#3b82f6',
+                                backgroundColor: '#3b82f633',
+                                fill: false,
+                                borderWidth: 2,
+                                tension: 0.2,
+                                pointRadius: pr,
+                                spanGaps: true
+                            },
+                            {
+                                label: 'Maker',
+                                data: points.map(function(p) { return p.vol_mkr; }),
+                                borderColor: '#c2773d',
+                                backgroundColor: '#c2773d33',
+                                fill: true,
+                                borderWidth: 2,
+                                tension: 0.2,
+                                pointRadius: pr,
+                                spanGaps: true
+                            },
+                            {
+                                label: 'Taker',
+                                data: points.map(function(p) { return p.vol_tkr; }),
+                                borderColor: '#eab308',
+                                backgroundColor: '#eab30833',
+                                fill: true,
+                                borderWidth: 2,
+                                tension: 0.2,
+                                pointRadius: pr,
+                                spanGaps: true
+                            }
+                        ]
+                    },
+                    options: Object.assign({}, commonOptions, {
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: { color: textColor, boxWidth: 12 }
+                            }
+                        }
+                    })
+                }));
+            }
+        }
+
+        function loadMinerHistory(uid) {
+            var days = parseInt(document.getElementById('historyDaysSelect').value, 10) || 7;
+            var bodyEl = document.getElementById('minerHistoryBody');
+            var emptyEl = document.getElementById('minerHistoryEmpty');
+            var chartsWrap = document.getElementById('minerHistoryCharts');
+            chartsWrap.style.display = 'none';
+            emptyEl.style.display = '';
+            emptyEl.textContent = 'Loading history...';
+            return fetch('/api/miner-history/' + uid + '?days=' + days)
+                .then(function(r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function(data) {
+                    renderHistoryCharts(data.points || []);
+                    return data;
+                })
+                .catch(function(err) {
+                    destroyHistoryCharts();
+                    chartsWrap.style.display = 'none';
+                    emptyEl.style.display = '';
+                    emptyEl.textContent = 'Failed to load history: ' + err.message;
+                });
+        }
+
+        function showMinerHistory(uid) {
+            if (getSubnetFromInput() !== 79) return;
+            currentHistoryUid = uid;
+            document.getElementById('minerHistoryModalTitle').textContent = 'Performance History — UID ' + uid;
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('minerHistoryModal')).show();
+            loadMinerHistory(uid);
+        }
+
+        function reloadMinerHistory() {
+            if (currentHistoryUid == null) return;
+            loadMinerHistory(currentHistoryUid);
+        }
+
+        document.getElementById('minerHistoryModal').addEventListener('hidden.bs.modal', function() {
+            destroyHistoryCharts();
+            currentHistoryUid = null;
+        });
+
+        document.getElementById('investing88MinerModal').addEventListener('hidden.bs.modal', function() {
+            destroyInvesting88Charts();
+            investing88MinerContext = null;
+        });
+
         function processMetagraph(data) {
             // API: /api/metagraph-data (Bittensor Metagraph). Incentive = emission share %.
             var netuid = data.netuid != null ? data.netuid : getSubnetFromInput();
@@ -492,6 +3006,7 @@
             if (chartTitleEl) chartTitleEl.textContent = 'Miner Incentive Distribution — Subnet ' + netuid;
             var tableTitleEl = document.getElementById('tableTitle');
             if (tableTitleEl) tableTitleEl.textContent = 'Miner Leaderboard — Subnet ' + netuid;
+            updateTableColumns();
             minersArray = [];
             var emissions = data.emissions || {};
             var hotkeyToUid = data.hotkeyToUid || {};
@@ -499,6 +3014,7 @@
             var isValidator = data.isValidator || {};
             var isImmune = data.isImmune || {};
             var minerAge = data.minerAge || {};
+            var uidToIp = data.uidToIp || {};
             var totalEmission = 0;
             var minerEmissions = [];
             Object.keys(emissions).forEach(function(hotkey) {
@@ -515,7 +3031,8 @@
                     emission: em,
                     rank: 0,
                     immune: isImmune[hotkey] || false,
-                    age: minerAge[hotkey] || 0
+                    age: minerAge[hotkey] || 0,
+                    axonIp: uidToIp[String(uid)] || uidToIp[uid] || ''
                 });
             });
             var totalEmissionSafe = totalEmission > 0 ? totalEmission : 1;
@@ -533,13 +3050,29 @@
             var total = minersArray.length;
             var sum = minersArray.reduce(function(s, m) { return s + m.incentive; }, 0);
             var top = Math.max.apply(null, minersArray.map(function(m) { return m.incentive; }));
-            var myCount = minersArray.filter(isMinerOwned).length;
+            var myMiners = minersArray.filter(isMinerOwned);
+            var myCount = myMiners.length;
+            var myTotal = myMiners.reduce(function(s, m) { return s + m.incentive; }, 0);
+            var myAvg = myCount > 0 ? myTotal / myCount : 0;
             var immuneCount = minersArray.filter(function(m) { return m.immune; }).length;
             document.getElementById('totalMiners').textContent = total;
             document.getElementById('avgIncentive').textContent = (sum / total).toFixed(4) + '%';
             document.getElementById('topIncentive').textContent = top.toFixed(4) + '%';
             document.getElementById('immuneMinersCount').textContent = immuneCount;
             document.getElementById('myMinersCount').textContent = myCount;
+            document.getElementById('myMinersAvgIncentive').textContent = myCount > 0
+                ? 'total ' + myTotal.toFixed(4) + '% · avg ' + myAvg.toFixed(4) + '%'
+                : '';
+            var myValueEl = document.getElementById('myMinersValue');
+            if (myValueEl) {
+                var totalValue = 0;
+                var hasAnyValue = false;
+                myMiners.forEach(function(m) {
+                    var v = getSn88Score(m.uid, 'value');
+                    if (v != null) { totalValue += v; hasAnyValue = true; }
+                });
+                myValueEl.textContent = hasAnyValue ? formatSn88Money(totalValue) : '—';
+            }
         }
 
         function updateHighlightInfo() {
@@ -574,9 +3107,11 @@
             // Group miners by coldkey
             var coldkeyGroups = {};
             minersArray.forEach(function(m) {
+
+                var netuid =  getSubnetFromInput();
                 // Filter out miners with incentive > 4%
-                if (m.incentive > 4) return;
-                
+                // if (netuid!= 88 && m.incentive > 3) return;
+
                 var ck = m.coldkey || 'unknown';
                 if (!coldkeyGroups[ck]) coldkeyGroups[ck] = [];
                 coldkeyGroups[ck].push({ x: m.rank, y: m.incentive, miner: m });
@@ -715,29 +3250,263 @@
                         }
                     },
                     scales: {
-                        x: { title: { display: true, text: 'Rank' }, min: 0, reverse: true, grid: { color: 'rgba(0,0,0,0.06)' } },
+                        x: { title: { display: true, text: 'Rank' }, min: 0, max: getSubnetFromInput() === 79 ? minersArray.length : undefined, reverse: true, grid: { color: 'rgba(0,0,0,0.06)' } },
                         y: { beginAtZero: true, title: { display: true, text: 'Incentive (%)' }, grid: { color: 'rgba(0,0,0,0.06)' } }
                     }
                 }
             });
         }
 
+        function getTableColspan() {
+            var n = getSubnetFromInput();
+            if (n === 79) return 14;
+            if (n === 88) return 16;
+            return 5;
+        }
+
+        function updateTableColumns() {
+            var netuid = getSubnetFromInput();
+            var showSn79Columns = netuid === 79;
+            var showSn88Columns = netuid === 88;
+            if (!showSn79Columns) hideFeeRegimePanel();
+            var sn79Headers = [
+                'serverColumnHeader',
+                'regDateColumnHeader',
+                'agentColumnHeader',
+                'kappaColumnHeader',
+                'pnlBooksColumnHeader',
+                'realPnlColumnHeader',
+                'unrlPnlColumnHeader',
+                'volumeColumnHeader',
+                'mkTkVolumeColumnHeader'
+            ];
+            sn79Headers.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.style.display = showSn79Columns ? '' : 'none';
+            });
+            var sn88Headers = [
+                'sn88AssetColumnHeader',
+                'sn88DaysColumnHeader',
+                'sn88LastColumnHeader',
+                'sn88ValueColumnHeader',
+                'sn88ScoreColumnHeader',
+                'sn88LsrColumnHeader',
+                'sn88MarColumnHeader',
+                'sn88RiskPctColumnHeader',
+                'sn88OddsPctColumnHeader',
+                'sn88DailyPctColumnHeader',
+                'sn88YieldPctColumnHeader'
+            ];
+            sn88Headers.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.style.display = showSn88Columns ? '' : 'none';
+            });
+            var myValueCard = document.getElementById('myValueCard');
+            if (myValueCard) myValueCard.style.display = showSn88Columns ? '' : 'none';
+        }
+
+        function getMinerAgentName(uid) {
+            var info = getMinerAgentInfo(uid);
+            return info ? info.name : '';
+        }
+
+        function renderAgentLabel(uid) {
+            var info = getMinerAgentInfo(uid);
+            if (!info || !info.name) return '';
+            var agentColor = getAgentColor(info.name, info.params);
+            var paramsHtml = formatAgentParamsSummary(info.params, info.name);
+            return '<span class="agent-name-block agent-name-clickable" style="' + getAgentBlockStyle(info.name, info.params) + '" title="Click to edit params: ' + escapeHtml(info.name) + '" onclick="showMinerParams(' + uid + ')">' +
+                '<span class="agent-name-label" style="color:' + agentColor + '">' + escapeHtml(info.name) + '</span>' +
+                (paramsHtml ? '<span class="agent-params-summary" style="color:' + agentColor + '">' + paramsHtml + '</span>' : '') +
+                '</span>';
+        }
+
+        function isTokyoRegDateIso(iso) {
+            return !!iso && (iso.indexOf('+09:00') >= 0 || iso.indexOf('+0900') >= 0);
+        }
+
+        function splitRegDateString(regDate) {
+            if (!regDate || regDate.indexOf(' ') < 0) return null;
+            var parts = regDate.split(' ');
+            return {
+                datePart: parts[0],
+                timePart: parts[1] ? parts[1].slice(0, 5) : '',
+                title: regDate + ' JST'
+            };
+        }
+
+        function formatInstantInTokyo(date) {
+            return {
+                datePart: date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' }),
+                timePart: date.toLocaleTimeString('en-GB', {
+                    timeZone: 'Asia/Tokyo',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                }),
+                title: date.toLocaleString('sv-SE', {
+                    timeZone: 'Asia/Tokyo',
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                }).replace('T', ' ') + ' JST'
+            };
+        }
+
+        function parseRegDateInstant(metrics) {
+            if (!metrics) return null;
+            var iso = metrics.reg_date_utc_iso || metrics.reg_date_iso;
+            if (iso) {
+                var fromIso = new Date(iso);
+                if (!isNaN(fromIso.getTime())) return fromIso;
+            }
+            if (metrics.reg_date && metrics.reg_date.indexOf(' ') >= 0) {
+                var suffix = (metrics.reg_date_tz === 'Asia/Tokyo' || isTokyoRegDateIso(iso)) ? '+09:00' : 'Z';
+                var fromLegacy = new Date(metrics.reg_date.replace(' ', 'T') + suffix);
+                if (!isNaN(fromLegacy.getTime())) return fromLegacy;
+            }
+            return null;
+        }
+
+        function formatRegDateDisplay(metrics) {
+            if (!metrics) return null;
+            if (metrics.reg_date && (metrics.reg_date_tz === 'Asia/Tokyo' || isTokyoRegDateIso(metrics.reg_date_iso))) {
+                return splitRegDateString(metrics.reg_date);
+            }
+            var instant = parseRegDateInstant(metrics);
+            return instant ? formatInstantInTokyo(instant) : null;
+        }
+
+        function getRegDate(uid) {
+            var formatted = formatRegDateDisplay(getUidMetrics(uid));
+            return formatted ? formatted.datePart + ' ' + formatted.timePart : '';
+        }
+
+        function getRegDateSortValue(uid) {
+            var m = getUidMetrics(uid);
+            if (!m) return '';
+            var instant = parseRegDateInstant(m);
+            return instant ? instant.toISOString() : (m.reg_date_utc_iso || m.reg_date_iso || m.reg_date || '');
+        }
+
+        function formatRegCostTao(tao) {
+            if (tao == null || tao === '') return null;
+            var n = Number(tao);
+            if (!isFinite(n)) return null;
+            if (n >= 1) return n.toFixed(3) + ' TAO';
+            if (n >= 0.01) return n.toFixed(4) + ' TAO';
+            return n.toFixed(6) + ' TAO';
+        }
+
+        function renderSubnetRegCost(data, netuid) {
+            var wrap = document.getElementById('subnetRegCost');
+            var valueEl = document.getElementById('subnetRegCostValue');
+            var labelEl = document.getElementById('subnetRegCostLabel');
+            if (!wrap || !valueEl) return;
+            netuid = netuid != null ? netuid : getSubnetFromInput();
+            wrap.style.display = '';
+            if (labelEl) labelEl.textContent = 'SN' + netuid + ' Reg cost';
+            var formatted = data ? formatRegCostTao(data.tao) : null;
+            valueEl.textContent = formatted || '—';
+            if (data && data.block != null) {
+                var title = 'Subnet ' + netuid + ' registration cost at block ' + data.block;
+                if (data.rao != null) title += ' · ' + Number(data.rao).toLocaleString() + ' rao';
+                if (data.updated_at) title += ' · updated ' + new Date(data.updated_at).toLocaleTimeString();
+                wrap.title = title;
+            } else {
+                wrap.title = '';
+            }
+        }
+
+        function loadSubnetRegCost(refresh) {
+            var netuid = getSubnetFromInput();
+            var url = '/api/reg-cost?netuid=' + netuid + (refresh ? '&refresh=1' : '');
+            return fetch(url)
+                .then(function(r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function(data) {
+                    if (getSubnetFromInput() !== netuid) return;
+                    renderSubnetRegCost(data, netuid);
+                })
+                .catch(function(err) {
+                    console.warn('Failed to load subnet reg cost:', err);
+                    if (getSubnetFromInput() === netuid) renderSubnetRegCost(null, netuid);
+                });
+        }
+
+        function renderRegDateCell(uid) {
+            var metrics = getUidMetrics(uid) || {};
+            var formatted = formatRegDateDisplay(metrics);
+            if (!formatted) return '<span class="metric-empty">—</span>';
+            var title = formatted.title;
+            if (metrics.blocks_since_registration != null) {
+                title += ' · ' + Number(metrics.blocks_since_registration).toLocaleString() + ' blocks ago';
+            }
+            var html = '<span class="reg-date-cell" title="' + escapeHtml(title) + '">' +
+                '<span class="reg-date-day">' + escapeHtml(formatted.datePart) + '</span>';
+            if (formatted.timePart) {
+                html += '<span class="reg-date-time">' + escapeHtml(formatted.timePart) + ' JST</span>';
+            }
+            html += '</span>';
+            return html;
+        }
+
+        function getMetricSortValue(uid, key) {
+            var val = getMetricValue(uid, key);
+            return val == null ? -Infinity : val;
+        }
+
+        function getSortValue(m, column) {
+            if (column === 'coldkey') return (m.coldkey || '').toLowerCase();
+            if (column === 'agent') return getMinerAgentName(m.uid).toLowerCase();
+            if (column === 'server') return getMinerServerName(m.uid).toLowerCase();
+            if (column === 'reg_date') return getRegDateSortValue(m.uid);
+            if (column === 'hotkey') return (m.hotkey || '').toLowerCase();
+            if (column === 'immune') return m.immune ? 1 : 0;
+            if (column === 'kappa') return getMetricSortValue(m.uid, 'kappa');
+            if (column === 'pnl_books_pos') return getMetricSortValue(m.uid, 'pnl_books_pos');
+            if (column === 'real_pnl') return getMetricSortValue(m.uid, 'real_pnl');
+            if (column === 'unrl_pnl') return getMetricSortValue(m.uid, 'unrl_pnl');
+            if (column === 'volume') return getMetricSortValue(m.uid, 'volume');
+            if (column === 'vol_mkr') return getMetricSortValue(m.uid, 'vol_mkr');
+            if (column === 'hot_books') return getHotBookCount(m.uid);
+            if (column === 'days') return m.days != null ? m.days : -Infinity;
+            if (column === 'sn88_last') { var v88 = getSn88Score(m.uid, 'last'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_value') { var v88 = getSn88Score(m.uid, 'value'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_score') { var v88 = getSn88Score(m.uid, 'score'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_lsr') { var v88 = getSn88Score(m.uid, 'lsr'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_mar') { var v88 = getSn88Score(m.uid, 'mar'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_risk_percent') { var v88 = getSn88Score(m.uid, 'risk_percent'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_odds_percent') { var v88 = getSn88Score(m.uid, 'odds_percent'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_daily_percent') { var v88 = getSn88Score(m.uid, 'daily_percent'); return v88 == null ? -Infinity : v88; }
+            if (column === 'sn88_yield_percent') { var v88 = getSn88Score(m.uid, 'yield_percent'); return v88 == null ? -Infinity : v88; }
+            return m[column];
+        }
+
         function renderTable() {
+            updateTableColumns();
             var tbody = document.getElementById('minersTableBody');
+            var colspan = getTableColspan();
             if (filteredMiners.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px">No miners</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="' + colspan + '" style="text-align:center;padding:40px">No miners</td></tr>';
                 return;
             }
             var sorted = filteredMiners.slice().sort(function(a, b) {
-                var va = a[sortColumn], vb = b[sortColumn];
-                if (sortColumn === 'hotkey') { va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase(); }
-                if (sortColumn === 'immune') { va = a.immune ? 1 : 0; vb = b.immune ? 1 : 0; }
+                var va = getSortValue(a, sortColumn);
+                var vb = getSortValue(b, sortColumn);
                 if (va < vb) return sortDirection === 'asc' ? -1 : 1;
                 if (va > vb) return sortDirection === 'asc' ? 1 : -1;
                 return 0;
             });
             var start = (currentPage - 1) * rowsPerPage;
             var pageData = sorted.slice(start, start + rowsPerPage);
+            var netuid = getSubnetFromInput();
             tbody.innerHTML = pageData.map(function(m) {
                 var owned = isMinerOwned(m);
                 var hotkeyEsc = (m.hotkey || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -745,14 +3514,51 @@
                 var coldkeyShort = m.coldkey ? (m.coldkey.substring(0,8) + '...' + m.coldkey.substring(m.coldkey.length-6)) : 'N/A';
                 var coldkeyColor = getColdkeyColor(m.coldkey);
                 var coldkeyDisplay = '<span class="coldkey-color-dot" style="background:' + coldkeyColor + '"></span><span class="coldkey-text" title="' + coldkeyEsc + '">' + coldkeyShort + '</span>' + 
-                    (m.coldkey ? ' <i class="bi bi-clipboard copy-btn" onclick="copyToClipboard(\'' + coldkeyEsc + '\', this)"></i>' : '');
+                    (m.coldkey ? ' <i class="bi bi-clipboard copy-btn" onclick="copyToClipboard(\'' + coldkeyEsc + '\', this)"></i>' : '') +
+                    (netuid === 88 ? ' <i class="bi bi-info-circle sn88-miner-info-btn" title="Investing88 miner info" onclick="event.stopPropagation(); showInvesting88Miner(' + m.uid + ',' + m.rank + ',\'' + hotkeyEsc + '\')"></i>' : '');
+                var agentCell = netuid === 79 ? renderAgentLabel(m.uid) : '';
+                var immuneIcon = m.immune
+                    ? ' <i class="bi bi-shield-fill immune-icon" title="Immune (' + m.age.toLocaleString() + ' blocks)"></i>'
+                    : '';
+                var uidDisplay = netuid === 79
+                    ? '<span class="uid-status-link" title="View TAOS metrics" onclick="showUidStatus(' + m.uid + ')">' + m.uid + '</span>'
+                    : String(m.uid);
+                var historyIcon = (netuid === 79 && hasTrackedHistory(m.uid))
+                    ? ' <i class="bi bi-graph-up history-icon" title="Performance history" onclick="event.stopPropagation(); showMinerHistory(' + m.uid + ')"></i>'
+                    : '';
+                var hotBookCount = netuid === 79 ? getHotBookCount(m.uid) : 0;
+                var hotBookMetrics = getUidMetrics(m.uid) || {};
+                var rowAccent = hotBookCount > 0
+                    ? ' style="' + getHotBookRowAccent(hotBookCount, hotBookMetrics.book_count || 0) + '"'
+                    : '';
                 
-                return '<tr class="' + (owned ? 'owned-row' : '') + '" title="Coldkey: ' + coldkeyEsc + '">' +
+                return '<tr class="' + (owned ? 'owned-row' : '') + '"' + rowAccent + ' title="Coldkey: ' + coldkeyEsc +
+                    (hotBookCount > 0 ? ' · ' + hotBookCount + ' book(s) near 500K limit' : '') + '">' +
                     '<td class="rank-cell">#' + m.rank + '</td>' +
-                    '<td class="uid-cell">' + m.uid + '</td>' +
+                    '<td class="uid-cell">' + uidDisplay + historyIcon + immuneIcon + '</td>' +
                     '<td class="hotkey-cell">' + (m.hotkey || '').substring(0,20) + '... <i class="bi bi-clipboard copy-btn" onclick="copyToClipboard(\'' + hotkeyEsc + '\', this)"></i></td>' +
                     '<td class="incentive-cell ' + (owned ? 'owned' : '') + '">' + m.incentive.toFixed(4) + '%</td>' +
-                    '<td>' + coldkeyDisplay + '</td></tr>';
+                    '<td>' + coldkeyDisplay + '</td>' +
+                    (netuid === 88 ? '<td>' + renderSn88AssetCell(m.uid) + '</td>' : '') +
+                    (netuid === 88 ? '<td><span class="metric-cell">' + (m.days != null ? m.days : '—') + '</span></td>' : '') +
+                    (netuid === 79 ? '<td>' + renderServerCell(m) + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + renderRegDateCell(m.uid) + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + agentCell + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + renderMetricCell(m.uid, 'kappa') + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + renderPnlBooksCell(m.uid) + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + renderPnlMetricCell(m.uid, 'real_pnl') + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + renderPnlMetricCell(m.uid, 'unrl_pnl') + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + renderVolumeCell(m.uid) + '</td>' : '') +
+                    (netuid === 79 ? '<td>' + renderMkTkVolumeCell(m.uid) + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'last', 'int') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'value', 'clip') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'score', 'num2') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'lsr', 'num4') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'mar', 'num2') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'risk_percent', 'pct_red') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'odds_percent', 'pct_green') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'daily_percent', 'pct_green') + '</td>' : '') +
+                    (netuid === 88 ? '<td>' + renderSn88ScoreCell(m.uid, 'yield_percent', 'pct2') + '</td>' : '') + '</tr>';
             }).join('');
             var totalRows = sorted.length;
             var totalPages = Math.ceil(totalRows / rowsPerPage);
@@ -784,7 +3590,11 @@
                 if (!q) return true;
                 return String(m.uid).indexOf(q) >= 0 || 
                        (m.hotkey || '').toLowerCase().indexOf(q) >= 0 || 
-                       (m.coldkey || '').toLowerCase().indexOf(q) >= 0;
+                       (m.coldkey || '').toLowerCase().indexOf(q) >= 0 ||
+                       getMinerAgentName(m.uid).toLowerCase().indexOf(q) >= 0 ||
+                       getMinerServerName(m.uid).toLowerCase().indexOf(q) >= 0 ||
+                       (m.axonIp || '').toLowerCase().indexOf(q) >= 0 ||
+                       ((getMinerAgentInfo(m.uid) || {}).miner_ip || '').toLowerCase().indexOf(q) >= 0;
             });
             
             currentPage = 1;

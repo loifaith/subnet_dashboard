@@ -1,15 +1,31 @@
 #!/usr/bin/env python3
 """Standalone script to load metagraph data - called as subprocess to avoid asyncio/threading issues."""
 import json
+import socket
 import sys
+
+def _format_axon_ip(ip) -> str:
+    if ip is None:
+        return ""
+    if isinstance(ip, int):
+        try:
+            return socket.inet_ntoa(ip.to_bytes(4, byteorder="big"))
+        except (OSError, OverflowError, ValueError):
+            return str(ip)
+    value = str(ip).strip()
+    if value.lower() in ("0", "0.0.0.0", "n/a", "none"):
+        return ""
+    return value
 
 def load_metagraph(netuid: int = 71):
     """Load metagraph and return JSON."""
+    import gc
     import traceback
+    metagraph = None
     try:
         from bittensor.core.metagraph import Metagraph
         network = "finney"
-        metagraph = Metagraph(netuid=netuid, network=network, lite=False, sync=True)
+        metagraph = Metagraph(netuid=netuid, network=network, lite=True, sync=True)
         
         uids = metagraph.uids
         hotkeys = metagraph.hotkeys
@@ -43,6 +59,7 @@ def load_metagraph(netuid: int = 71):
         isValidator = {}
         isImmune = {}
         minerAge = {}
+        uidToIp = {}
         
         for i in range(n):
             hk = hotkeys[i]
@@ -66,6 +83,11 @@ def load_metagraph(netuid: int = 71):
             isValidator[hk] = val
             isImmune[hk] = is_immune
             minerAge[hk] = blocks_since_registration
+            try:
+                axon = metagraph.axons[i]
+                uidToIp[str(uid)] = _format_axon_ip(axon.ip if hasattr(axon, "ip") else None)
+            except Exception:
+                uidToIp[str(uid)] = ""
         
         return {
             "hotkeyToUid": hotkeyToUid,
@@ -77,6 +99,7 @@ def load_metagraph(netuid: int = 71):
             "isValidator": isValidator,
             "isImmune": isImmune,
             "minerAge": minerAge,
+            "uidToIp": uidToIp,
             "totalNeurons": n,
             "netuid": netuid,
             "currentBlock": current_block,
@@ -94,12 +117,25 @@ def load_metagraph(netuid: int = 71):
             "isValidator": {},
             "isImmune": {},
             "minerAge": {},
+            "uidToIp": {},
             "totalNeurons": 0,
             "netuid": netuid,
             "currentBlock": 0,
             "immunityPeriod": 10000,
             "error": str(e) + "\n" + traceback.format_exc(),
         }
+    finally:
+        try:
+            if metagraph is not None:
+                sub = getattr(metagraph, "subtensor", None)
+                if sub is not None:
+                    substrate = getattr(sub, "substrate", None) or getattr(sub, "_substrate", None)
+                    if substrate is not None and hasattr(substrate, "close"):
+                        substrate.close()
+                del metagraph
+        except Exception:
+            pass
+        gc.collect()
 
 if __name__ == "__main__":
     netuid = int(sys.argv[1]) if len(sys.argv) > 1 else 71
