@@ -38,11 +38,17 @@ def load_metagraph(netuid: int = 71):
         current_block = metagraph.block
         block_at_registration = metagraph.block_at_registration
         
-        # Get immunity period from subtensor
+        # Get immunity period and alpha price from subtensor
         immunity_period = 10000
+        alpha_price_tao = None
         try:
             subnet_info = metagraph.subtensor.get_subnet_hyperparameters(netuid)
             immunity_period = subnet_info.immunity_period
+        except:
+            pass
+        try:
+            dynamic_info = metagraph.subtensor.subnet(netuid)
+            alpha_price_tao = float(dynamic_info.price)
         except:
             pass
         
@@ -104,6 +110,7 @@ def load_metagraph(netuid: int = 71):
             "netuid": netuid,
             "currentBlock": current_block,
             "immunityPeriod": immunity_period,
+            "alphaPriceTao": alpha_price_tao,
             "error": None,
         }
     except Exception as e:
@@ -122,6 +129,7 @@ def load_metagraph(netuid: int = 71):
             "netuid": netuid,
             "currentBlock": 0,
             "immunityPeriod": 10000,
+            "alphaPriceTao": None,
             "error": str(e) + "\n" + traceback.format_exc(),
         }
     finally:

@@ -745,7 +745,9 @@
                 <div class="stat-card"><div class="stat-label">Top Incentive</div><div class="stat-value warning" id="topIncentive">-</div></div>
                 <div class="stat-card"><div class="stat-label">Immune Miners</div><div class="stat-value info" id="immuneMinersCount">-</div></div>
                 <div class="stat-card"><div class="stat-label">My Miners</div><div class="stat-value"><span id="myMinersCount">-</span><span class="stat-value-sub" id="myMinersAvgIncentive"></span></div></div>
-                <div class="stat-card" id="myValueCard" style="display:none"><div class="stat-label">My Value (Total)</div><div class="stat-value primary" id="myMinersValue">—</div></div>
+                <div class="stat-card"><div class="stat-label">My TAO/Day</div><div class="stat-value success" id="myTaoPerDay">-</div></div>
+                <div class="stat-card"><div class="stat-label" id="myTaoEpochLabel">My TAO/Epoch</div><div class="stat-value info" id="myTaoPerEpoch">-</div></div>
+                <!-- <div class="stat-card" id="myValueCard" style="display:none"><div class="stat-label">My Value (Total)</div><div class="stat-value primary" id="myMinersValue">—</div></div> -->
             </div>
             <div class="coldkey-card">
                 <h5><i class="bi bi-key"></i> Register My Coldkeys</h5>
@@ -976,6 +978,10 @@
         // Structure: incentives[hotkey]=decimal, hotkeyToUid[hotkey]=uid, hotkeyToColdkey[hotkey]=coldkey
         let minersArray = [];
         let filteredMiners = [];
+        let subnetTotalEmission = 0;
+        let subnetEmissions = {};
+        let subnetAlphaPrices = {};
+        let currentBlock = 0;
         let chart = null;
         const DEFAULT_COLDKEYS = [
             "5F7YRN7pXvyqBY1wxJ3TBC2TfprxGXzWHfhDuspt6tyfsjJL",
@@ -1120,6 +1126,10 @@
             loadColdkeys();
             loadData();
             setInterval(loadData, 5 * 60 * 1000);
+            var currentNetuid = getSubnetFromInput();
+            [71, 79, 88].forEach(function(n) {
+                if (n !== currentNetuid) fetchSubnetEmissionBackground(n);
+            });
         });
 
         function loadColdkeys() {
@@ -3035,6 +3045,10 @@
                     axonIp: uidToIp[String(uid)] || uidToIp[uid] || ''
                 });
             });
+            subnetTotalEmission = totalEmission;
+            subnetEmissions[netuid] = totalEmission;
+            if (data.alphaPriceTao != null) subnetAlphaPrices[netuid] = data.alphaPriceTao;
+            if (data.currentBlock) currentBlock = data.currentBlock;
             var totalEmissionSafe = totalEmission > 0 ? totalEmission : 1;
             minerEmissions.forEach(function(m) {
                 m.incentive = (m.emission / totalEmissionSafe) * 100;
@@ -3063,6 +3077,31 @@
             document.getElementById('myMinersAvgIncentive').textContent = myCount > 0
                 ? 'total ' + myTotal.toFixed(4) + '% · avg ' + myAvg.toFixed(4) + '%'
                 : '';
+            var netuid = getSubnetFromInput();
+            var price = subnetAlphaPrices[netuid];
+            var myTaoEl = document.getElementById('myTaoPerDay');
+            if (myTaoEl) {
+                if (price != null && myCount > 0) {
+                    var myDailyTao = myMiners.reduce(function(s, m) { return s + m.emission * price * 20; }, 0);
+                    myTaoEl.textContent = 'τ ' + myDailyTao.toFixed(4);
+                } else {
+                    myTaoEl.textContent = price == null ? '…' : '-';
+                }
+            }
+            var myEpochEl = document.getElementById('myTaoPerEpoch');
+            var myEpochLabel = document.getElementById('myTaoEpochLabel');
+            if (myEpochEl) {
+                if (price != null && myCount > 0) {
+                    var myEpochTao = myMiners.reduce(function(s, m) { return s + m.emission * price; }, 0);
+                    var epochNum = currentBlock > 0 ? Math.floor(currentBlock / 360) : null;
+                    if (myEpochLabel && epochNum != null) {
+                        myEpochLabel.textContent = 'My TAO/Epoch #' + epochNum;
+                    }
+                    myEpochEl.textContent = 'τ ' + myEpochTao.toFixed(4);
+                } else {
+                    myEpochEl.textContent = price == null ? '…' : '-';
+                }
+            }
             var myValueEl = document.getElementById('myMinersValue');
             if (myValueEl) {
                 var totalValue = 0;
@@ -3073,6 +3112,47 @@
                 });
                 myValueEl.textContent = hasAnyValue ? formatSn88Money(totalValue) : '—';
             }
+        }
+
+        function renderSubnetEmissions() {
+            var el = document.getElementById('myEmissionTotal');
+            if (!el) return;
+            var n = getSubnetFromInput();
+            var em = subnetEmissions[n];
+            var price = subnetAlphaPrices[n];
+            var isDark = document.documentElement.classList.contains('theme-dark');
+            var dim = isDark ? '#64748b' : '#adb5bd';
+            if (em == null) {
+                el.innerHTML = '<span style="color:' + dim + '">…</span>';
+                return;
+            }
+            var epochTao = (price != null) ? em * price : null;
+            var dailyTao = epochTao != null ? epochTao * 20 : null;
+            var epochStr = epochTao != null ? 'τ' + epochTao.toFixed(4) : 'α' + em.toFixed(4);
+            var dailyStr = dailyTao != null
+                ? '<div style="font-size:0.72rem;color:' + dim + ';margin-top:2px">/day τ' + dailyTao.toFixed(2) + '</div>'
+                : '';
+            el.innerHTML = '<div style="font-size:1.4rem;font-weight:700;color:#17a2b8">' + epochStr + '</div>' + dailyStr;
+        }
+
+        function fetchSubnetEmissionBackground(netuid) {
+            fetch('/api/metagraph-data?netuid=' + netuid)
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(data) {
+                    if (!data) return;
+                    var emissions = data.emissions || {};
+                    var isValidator = data.isValidator || {};
+                    var total = 0;
+                    Object.keys(emissions).forEach(function(hk) {
+                        if (isValidator[hk]) return;
+                        var em = emissions[hk];
+                        if (typeof em === 'number' && em > 0) total += em;
+                    });
+                    subnetEmissions[netuid] = total;
+                    if (data.alphaPriceTao != null) subnetAlphaPrices[netuid] = data.alphaPriceTao;
+                    renderSubnetEmissions();
+                })
+                .catch(function() {});
         }
 
         function updateHighlightInfo() {
