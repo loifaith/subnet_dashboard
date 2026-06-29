@@ -10,22 +10,22 @@ __pycache__/
 venv/
 
 # Cache and data directories
-investing88_cache/
-miner_status/
-miner_history/
-fee_history/
-agent_history/
-volume_agent_switches/
+# investing88_cache/
+# miner_status/
+# miner_history/
+# fee_history/
+# agent_history/
+# volume_agent_switches/
 
 # Miner params (sensitive config)
-79Miners/params/
+# 79Miners/params/
 
 # Log files
 logs/
 *.log
 
 # JSON data files at project root
-dashboard_counts.json
+# dashboard_counts.json
 
 # Temp / OS
 *.tmp

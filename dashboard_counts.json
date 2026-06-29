@@ -1,0 +1,13 @@
+{
+  "raw_company": 0,
+  "useful_company": 0,
+  "person_company": 0,
+  "true_list": 0,
+  "scored_company": 0,
+  "checked_company": 0,
+  "generated_leads": 0,
+  "valued_leads": 0,
+  "connection_pool": 0,
+  "max_connection_pool": 0,
+  "error": null
+}
