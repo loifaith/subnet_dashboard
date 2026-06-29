@@ -28,6 +28,36 @@ def daily_status_path(day: Optional[str] = None) -> str:
     return os.path.join(MINER_STATUS_DIR, f"{day}.json")
 
 
+def prev_epoch_path() -> str:
+    return os.path.join(MINER_STATUS_DIR, "prev_epoch_metrics.json")
+
+
+def load_prev_epoch_metrics() -> Optional[Dict[str, Any]]:
+    path = prev_epoch_path()
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _save_prev_epoch_metrics(metrics: Dict[str, Any]) -> None:
+    """Snapshot the current metrics as prev-epoch before they are overwritten."""
+    os.makedirs(MINER_STATUS_DIR, exist_ok=True)
+    path = prev_epoch_path()
+    tmp = f"{path}.tmp"
+    payload = {
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "metrics": metrics,
+    }
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+        f.write("\n")
+    os.replace(tmp, path)
+
+
 def load_daily_status(day: Optional[str] = None) -> Optional[dict]:
     path = daily_status_path(day)
     if not os.path.isfile(path):
@@ -48,6 +78,9 @@ def save_daily_status(
     current_block: Optional[int] = None,
 ) -> str:
     os.makedirs(MINER_STATUS_DIR, exist_ok=True)
+    existing = load_daily_status(day)
+    if existing and existing.get("metrics"):
+        _save_prev_epoch_metrics(existing["metrics"])
     day = day or _today_str()
     payload: Dict[str, Any] = {
         "date": day,
@@ -189,8 +222,10 @@ def get_cached_metrics_payload(uids: Optional[list[int]] = None, day: Optional[s
         return None
     metrics = filter_metrics(cached.get("metrics", {}), uids)
     merge_reg_costs_from_cache(metrics)
+    prev = load_prev_epoch_metrics()
     return {
         "metrics": metrics,
+        "prev_metrics": filter_metrics(prev.get("metrics", {}), uids) if prev else {},
         "updated_at": cached.get("updated_at"),
         "date": cached.get("date"),
         "source": "file",

@@ -34,7 +34,7 @@
         html.theme-dark .theme-toggle button:hover { color: #38bdf8; background: rgba(56,189,248,0.15); }
         .theme-toggle button.active { background: #fff; color: #007bff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         html.theme-dark .theme-toggle button.active { background: #475569; color: #7dd3fc; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-        .main-content { width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .main-content { width: 100%; height: 100vh; display: flex; flex-direction: column; overflow-x: auto; overflow-y: hidden; }
         .top-bar {
             background: #fff;
             border-bottom: 1px solid #dee2e6;
@@ -42,6 +42,9 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            min-width: 0;
         }
         html.theme-dark .top-bar { background: #1e293b; border-bottom-color: #334155; }
         .top-bar-left { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
@@ -81,7 +84,7 @@
         html.theme-dark .subnet-reg-cost-value { color: #7dd3fc; }
         .page-title { font-size: 1.8rem; font-weight: 600; color: #333; }
         html.theme-dark .page-title { color: #f1f5f9; }
-        .content-area { flex: 1; overflow-y: auto; padding: 30px; }
+        .content-area { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 30px; min-width: 0; }
         html.theme-dark .content-area { background: #0f172a; }
 
         .stats-row {
@@ -166,10 +169,11 @@
         .search-box { padding: 8px 14px; border: 1px solid #dee2e6; border-radius: 8px; font-size: 0.9rem; width: 260px; }
         html.theme-dark .search-box { background: #0f172a; border-color: #475569; color: #e2e8f0; }
         .miners-table { width: 100%; border-collapse: collapse; }
+        .miners-table-wrap { overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 180px); }
         .miners-table thead { background: #f8f9fa; }
         html.theme-dark .miners-table thead { background: #334155; }
-        .miners-table th { padding: 6px 8px; text-align: left; font-weight: 600; font-size: 0.72rem; color: #495057; border-bottom: 2px solid #dee2e6; cursor: pointer; line-height: 1.15; }
-        html.theme-dark .miners-table th { color: #e2e8f0; border-bottom-color: #475569; }
+        .miners-table th { padding: 6px 8px; text-align: left; font-weight: 600; font-size: 0.72rem; color: #495057; border-bottom: 2px solid #dee2e6; cursor: pointer; line-height: 1.15; position: sticky; top: 0; z-index: 2; background: #f8f9fa; }
+        html.theme-dark .miners-table th { color: #e2e8f0; border-bottom-color: #475569; background: #334155; }
         .miners-table th:hover { background: #e9ecef; }
         html.theme-dark .miners-table th:hover { background: #475569; }
         .miners-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; line-height: 1.15; vertical-align: middle; }
@@ -255,6 +259,8 @@
         .coldkey-color-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; vertical-align: middle; border: 1px solid #ccc; }
         html.theme-dark .coldkey-color-dot { border-color: #64748b; }
         .coldkey-text { font-size: 0.68rem; color: #6c757d; font-family: monospace; }
+        .ck-count-badge { font-size:0.65rem; background:#e2e8f0; color:#475569; border-radius:8px; padding:1px 5px; font-weight:700; }
+        html.theme-dark .ck-count-badge { background:#334155; color:#94a3b8; }
         html.theme-dark .coldkey-text { color: #94a3b8; }
         .copy-btn { cursor: pointer; color: #007bff; opacity: 0; margin-left: 4px; transition: opacity 0.2s; }
         html.theme-dark .copy-btn { color: #38bdf8; }
@@ -428,6 +434,40 @@
             font-size: 0.9rem;
         }
         html.theme-dark .params-meta-item input, html.theme-dark .params-meta-item select { background: #1e293b; border-color: #475569; color: #e2e8f0; }
+        .agent-list-box {
+            max-height: 180px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            background: #fff;
+        }
+        html.theme-dark .agent-list-box { background: #1e293b; border-color: #475569; }
+        .agent-list-group-label {
+            padding: 3px 8px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #94a3b8;
+            background: #f1f5f9;
+            border-bottom: 1px solid #dee2e6;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        html.theme-dark .agent-list-group-label { background: #0f172a; border-bottom-color: #334155; }
+        .agent-list-item {
+            padding: 5px 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        html.theme-dark .agent-list-item { border-bottom-color: #1e293b; }
+        .agent-list-item:hover { background: #e0f2fe; }
+        html.theme-dark .agent-list-item:hover { background: #1e3a5f; }
+        .agent-list-item.selected { background: #dbeafe; font-weight: 600; }
+        html.theme-dark .agent-list-item.selected { background: #1e3a5f; }
         .params-form-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         .params-form-table th, .params-form-table td { padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
         html.theme-dark .params-form-table th, html.theme-dark .params-form-table td { border-bottom-color: #334155; }
@@ -567,6 +607,8 @@
             border-radius: 12px;
             border: 1px solid #dee2e6;
             background: #f8f9fa;
+            min-width: 0;
+            box-sizing: border-box;
         }
         html.theme-dark .fee-regime-panel {
             background: #0f172a;
@@ -781,9 +823,9 @@
                         <div class="fee-regime-toolbar">
                             <label for="feeRegimeDaysSelect">History</label>
                             <select id="feeRegimeDaysSelect" class="form-select form-select-sm" onchange="reloadFeeRegimePanel()">
-                                <option value="1">Today</option>
+                                <option value="1" selected>Today</option>
                                 <option value="3">3 days</option>
-                                <option value="7" selected>7 days</option>
+                                <option value="7">7 days</option>
                                 <option value="14">14 days</option>
                                 <option value="30">30 days</option>
                             </select>
@@ -818,7 +860,7 @@
                         <input type="text" class="search-box" id="searchBox" placeholder="Search UID, Hotkey, Coldkey, Agent or Server..." oninput="filterTable()">
                     </div>
                 </div>
-                <div style="overflow-x:auto">
+                <div class="miners-table-wrap">
                     <table class="miners-table">
                         <thead>
                             <tr>
@@ -922,9 +964,9 @@
                     <div class="history-toolbar">
                         <label for="historyDaysSelect">Range</label>
                         <select id="historyDaysSelect" class="form-select form-select-sm" style="width:auto" onchange="reloadMinerHistory()">
-                            <option value="1">Today</option>
+                            <option value="1" selected>Today</option>
                             <option value="3">3 days</option>
-                            <option value="7" selected>7 days</option>
+                            <option value="7">7 days</option>
                             <option value="14">14 days</option>
                             <option value="30">30 days</option>
                         </select>
@@ -1074,6 +1116,7 @@
         let investing88ScoresMap = {};
         let minerAgentInfo = {};
         let uidMetrics = {};
+        let prevUidMetrics = {};
         var bookVolumeLimit = 500000;
         var bookVolumeWarnRatio = 0.98;
         var DISPLAY_PARAM_KEYS = [
@@ -1800,6 +1843,11 @@
                     return r.json();
                 })
                 .then(function(data) {
+                    if (data.prev_metrics && Object.keys(data.prev_metrics).length > 0) {
+                        prevUidMetrics = data.prev_metrics;
+                    } else if (Object.keys(uidMetrics).length > 0) {
+                        prevUidMetrics = uidMetrics;
+                    }
                     uidMetrics = data.metrics || {};
                     if (data.book_volume_limit != null) bookVolumeLimit = data.book_volume_limit;
                     if (data.book_volume_warn_ratio != null) bookVolumeWarnRatio = data.book_volume_warn_ratio;
@@ -1813,7 +1861,20 @@
         function getUidMetrics(uid) {
             return uidMetrics[String(uid)] || uidMetrics[uid] || null;
         }
-
+        function getMetricDelta(uid, key) {
+            var cur = getMetricValue(uid, key);
+            var prev = (prevUidMetrics[String(uid)] || prevUidMetrics[uid] || {})[key];
+            if (cur == null || prev == null) return null;
+            return Number(cur) - Number(prev);
+        }
+        function renderDeltaHtml(delta) {
+            if (delta == null || delta === 0) return '';
+            var rounded = Math.round(delta);
+            if (rounded === 0) return '';
+            var sign = rounded > 0 ? '+' : '';
+            var color = rounded > 0 ? '#22c55e' : '#ef4444';
+            return '<span style="font-size:0.7rem;color:' + color + ';margin-left:3px">' + sign + formatCompactNumber(rounded, 1) + '</span>';
+        }
         function formatCompactNumber(value, smallDecimals) {
             if (value == null || Number.isNaN(Number(value))) return 'n/a';
             var v = Number(value);
@@ -1878,7 +1939,7 @@
             var val = getMetricValue(uid, key);
             if (val == null) return '<span class="coldkey-text">-</span>';
             var cls = val < 0 ? ' metric-pnl-neg' : '';
-            return '<span class="metric-cell' + cls + '">' + escapeHtml(formatMetricValue(val)) + '</span>';
+            return '<span class="metric-cell' + cls + '">' + escapeHtml(formatMetricValue(val)) + renderDeltaHtml(getMetricDelta(uid, key)) + '</span>';
         }
 
         function formatPnlValueHtml(value) {
@@ -1915,7 +1976,7 @@
             return '<span class="metric-cell volume-warn-cell"' +
                 (warnStyle ? ' style="' + warnStyle + '"' : '') +
                 (title ? ' title="' + escapeHtml(title) + '"' : '') + '>' +
-                escapeHtml(formatMetricValue(val)) + warnIcon + '</span>';
+                escapeHtml(formatMetricValue(val)) + renderDeltaHtml(getMetricDelta(uid, 'volume')) + warnIcon + '</span>';
         }
 
         function renderMkTkVolumeCell(uid) {
@@ -2066,6 +2127,59 @@
             return parseInt(el.value, 10);
         }
 
+        var AGENT_STYLE_GROUPS = [
+            { label: 'Taker',    test: function(n) { return /taker/i.test(n); } },
+            { label: 'Maker',    test: function(n) { return /maker/i.test(n) || /^RandomM[A-Z]/i.test(n); } },
+            { label: 'Hybrid',   test: function(n) { return /hybrid/i.test(n); } },
+            { label: 'Ultimate', test: function(n) { return /ultimate/i.test(n); } },
+            { label: 'Futures',  test: function(n) { return /futures/i.test(n); } },
+            { label: 'Profit',   test: function(n) { return /profit/i.test(n); } },
+            { label: 'Other',    test: function(n) { return true; } },
+        ];
+
+        function classifyAgent(name) {
+            for (var i = 0; i < AGENT_STYLE_GROUPS.length; i++) {
+                if (AGENT_STYLE_GROUPS[i].test(name)) return AGENT_STYLE_GROUPS[i].label;
+            }
+            return 'Other';
+        }
+
+        function buildAgentListHtml(data, selectedIndex) {
+            var agents = data.agents || [];
+            var grouped = {};
+            var order = [];
+            agents.forEach(function(agent, idx) {
+                var name = agent && agent.name ? agent.name : ('Agent ' + idx);
+                var group = classifyAgent(name);
+                if (!grouped[group]) { grouped[group] = []; order.push(group); }
+                grouped[group].push({ idx: idx, name: name });
+            });
+            var html = '<div class="agent-list-box" id="agentListBox">';
+            order.forEach(function(group) {
+                html += '<div class="agent-list-group-label">' + escapeHtml(group) + '</div>';
+                grouped[group].forEach(function(item) {
+                    var sel = item.idx === selectedIndex ? ' selected' : '';
+                    html += '<div class="agent-list-item' + sel + '" data-idx="' + item.idx + '" onclick="selectAgentOption(' + item.idx + ')">' +
+                        highlightAgentName(item.name) +
+                        '</div>';
+                });
+            });
+            html += '</div>';
+            return html;
+        }
+
+        function selectAgentOption(idx) {
+            var hidden = document.getElementById('paramAgentIndex');
+            if (hidden) hidden.value = idx;
+            var box = document.getElementById('agentListBox');
+            if (box) {
+                box.querySelectorAll('.agent-list-item').forEach(function(el) {
+                    el.classList.toggle('selected', parseInt(el.dataset.idx, 10) === idx);
+                });
+            }
+            onParamAgentIndexChange();
+        }
+
         function buildAgentSelectHtml(data, selectedIndex) {
             return (data.agents || []).map(function(agent, idx) {
                 var name = agent && agent.name ? agent.name : ('Agent ' + idx);
@@ -2150,8 +2264,9 @@
                 '<div class="params-meta-item"><label>UID</label><div class="meta-value">' + uid + '</div></div>' +
                 '<div class="params-meta-item"><label>Sync IP</label><div class="meta-value">' + escapeHtml(syncIp) + '</div></div>' +
                 '<div class="params-meta-item"><label>Poll Seconds</label><div class="meta-value">' + (data.poll_seconds != null ? data.poll_seconds : 60) + '</div></div>' +
-                '<div class="params-meta-item"><label>Agent</label><select id="paramAgentIndex" onchange="onParamAgentIndexChange()">' +
-                    buildAgentSelectHtml(data, agentIndex) + '</select></div>';
+                '<div class="params-meta-item" style="grid-column:1/-1"><label>Agent</label>' +
+                    '<input type="hidden" id="paramAgentIndex" value="' + agentIndex + '">' +
+                    buildAgentListHtml(data, agentIndex) + '</div>';
 
             if (!data.agents || !data.agents.length) {
                 document.getElementById('minerParamsFormWrap').style.display = 'none';
@@ -2287,8 +2402,9 @@
                 var changeCell;
                 if (entry.source === 'params_update') {
                     var agentName = escapeHtml(entry.new_agent || ('#' + entry.new_agent_index));
-                    var extra = entry.extra && entry.extra.params
-                        ? Object.entries(entry.extra.params).map(function(kv) {
+                    var paramsData = entry.params || (entry.extra && entry.extra.params);
+                    var extra = paramsData
+                        ? Object.entries(paramsData).map(function(kv) {
                             return escapeHtml(kv[0]) + ': ' + escapeHtml(String(kv[1]));
                           }).join(' · ')
                         : '';
@@ -2831,7 +2947,11 @@
             if (!iso) return '';
             var d = new Date(iso);
             if (isNaN(d.getTime())) return iso;
-            return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            var mo = d.getMonth() + 1;
+            var dy = d.getDate();
+            var hh = String(d.getHours()).padStart(2, '0');
+            var mm = String(d.getMinutes()).padStart(2, '0');
+            return mo + '/' + dy + ' ' + hh + ':' + mm;
         }
 
         function formatFeeRegimeLabel(iso) {
@@ -3198,15 +3318,31 @@
             });
             
             // Create dataset for each coldkey (split by immune status for different point styles)
+            var MY_CK_FIXED = {
+                '5GREyxixYB8EJVHV1A9fQDh734tghXtt41A2MQG7VebqfQNe': '#3b82f6',
+                '5DD45SAecKmhpyn9TykNoZWnc7mFgBrhvwmYNC6XSN2Ron6R': '#ef4444',
+                '5Fnwngtt7bm5Nm8zTrXeELgG88M1cDBkJzaewdDghkLfgnXW': '#facc15',
+            };
+            var myColdkeyColors = {};
+            registeredColdkeys.forEach(function(ck) {
+                myColdkeyColors[ck] = MY_CK_FIXED[ck] || '#ffffff';
+            });
+
             var datasets = [];
             var coldkeyToIndex = {}; // Map coldkey to dataset index
-            Object.keys(coldkeyGroups).forEach(function(coldkey) {
+            // Sort: registered first, then highlighted, then others
+            var sortedColdkeys = Object.keys(coldkeyGroups).sort(function(a, b) {
+                var aReg = registeredColdkeys.indexOf(a) >= 0 ? 0 : (highlightedColdkeys.indexOf(a) >= 0 ? 1 : 2);
+                var bReg = registeredColdkeys.indexOf(b) >= 0 ? 0 : (highlightedColdkeys.indexOf(b) >= 0 ? 1 : 2);
+                return aReg - bReg;
+            });
+            sortedColdkeys.forEach(function(coldkey) {
                 var miners = coldkeyGroups[coldkey];
                 var isRegistered = registeredColdkeys.indexOf(coldkey) >= 0;
                 var isHighlighted = highlightedColdkeys.indexOf(coldkey) >= 0;
-                var baseColor = getColdkeyColor(coldkey);
-                var bgColor = hslToRgba(baseColor, isHighlighted ? 1 : 0.7);
-                var borderColor = isHighlighted ? 'rgba(255,215,0,1)' : (isRegistered ? 'rgba(255,140,0,1)' : hslToRgba(baseColor, 0.95));
+                var baseColor = isRegistered ? myColdkeyColors[coldkey] : (isHighlighted ? '#facc15' : getColdkeyColor(coldkey));
+                var bgColor = isRegistered ? baseColor : (isHighlighted ? '#facc15' : hslToRgba(baseColor, 0.7));
+                var borderColor = isRegistered ? '#ffffff' : (isHighlighted ? '#ffffff' : hslToRgba(baseColor, 0.95));
                 
                 // Split miners into immune and non-immune
                 var immuneMiners = miners.filter(function(p) { return p.miner.immune; });
@@ -3220,11 +3356,12 @@
                 
                 // Generate label
                 var label = coldkey === 'unknown' ? 'Unknown Coldkey' : coldkey.substring(0, 8) + '...' + coldkey.substring(coldkey.length - 6);
+                label += ' (' + miners.length + ')';
                 if (isHighlighted) label = '💡 ' + label;
                 else if (isRegistered) label = '⭐ ' + label;
                 
                 coldkeyToIndex[coldkey] = datasets.length;
-                
+
                 // Add non-immune miners dataset (circles)
                 if (nonImmuneMiners.length > 0) {
                     datasets.push({
@@ -3240,7 +3377,7 @@
                         isImmune: false
                     });
                 }
-                
+
                 // Add immune miners dataset (rectangles)
                 if (immuneMiners.length > 0) {
                     datasets.push({
@@ -3287,8 +3424,31 @@
                                 padding: 10,
                                 font: { size: 10 },
                                 filter: function(legendItem, chartData) {
-                                    // Hide datasets with empty labels (immune-only datasets when non-immune exist)
                                     return chartData.datasets[legendItem.datasetIndex].label !== '';
+                                },
+                                generateLabels: function(chart) {
+                                    var defaults = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                    defaults.forEach(function(item) {
+                                        var ds = chart.data.datasets[item.datasetIndex];
+                                        if (!ds) return;
+                                        var makerCount = 0, takerCount = 0;
+                                        (ds.data || []).forEach(function(p) {
+                                            try {
+                                                var n = getMinerAgentName(p.miner.uid);
+                                                if (/taker/i.test(n)) takerCount++;
+                                                else if (/maker/i.test(n) || /^RandomM[A-Z]/i.test(n)) makerCount++;
+                                            } catch(e) {}
+                                        });
+                                        if (makerCount + takerCount > 0) {
+                                            item.fillStyle = takerCount > makerCount
+                                                ? 'rgba(180,83,9,0.9)'
+                                                : 'rgba(59,130,246,0.9)';
+                                        }
+                                    });
+                                    return defaults.filter(function(item) {
+                                        var ds = chart.data.datasets[item.datasetIndex];
+                                        return ds && ds.label !== '';
+                                    });
                                 }
                             },
                             onClick: function(e, legendItem, legend) {
@@ -3390,13 +3550,45 @@
             return info ? info.name : '';
         }
 
+        var AGENT_KEYWORD_COLORS = [
+            { kw: 'Harvester',  color: '#a855f7' },
+            { kw: 'Ultimate',   color: '#f97316' },
+            { kw: 'Futures',    color: '#3b82f6' },
+            { kw: 'Adaptive',   color: '#8b5cf6' },
+            { kw: 'Hybrid',     color: '#10b981' },
+            { kw: 'Regime',     color: '#14b8a6' },
+            { kw: 'Profit',     color: '#22c55e' },
+            { kw: 'Gamma',      color: '#f59e0b' },
+            { kw: 'Delta',      color: '#06b6d4' },
+            { kw: 'Beta',       color: '#84cc16' },
+            { kw: 'Taker',      color: '#f43f5e' },
+            { kw: 'Maker',      color: '#38bdf8' },
+            { kw: 'Toxicity',   color: '#fb923c' },
+            { kw: 'Cross',      color: '#e879f9' },
+            { kw: 'Eater',      color: '#ff6b6b' },
+            { kw: 'Tune',       color: '#94a3b8' },
+            { kw: 'DCA',        color: '#34d399' },
+            { kw: 'OBB',        color: '#fbbf24' },
+        ];
+
+        function highlightAgentName(name) {
+            if (name === 'FreeAllAgent') return escapeHtml(name);
+            var result = escapeHtml(name);
+            AGENT_KEYWORD_COLORS.forEach(function(entry) {
+                var escaped = escapeHtml(entry.kw);
+                var re = new RegExp('(' + escaped + ')', 'gi');
+                result = result.replace(re, '<span style="color:' + entry.color + ';font-weight:700">$1</span>');
+            });
+            return result;
+        }
+
         function renderAgentLabel(uid) {
             var info = getMinerAgentInfo(uid);
             if (!info || !info.name) return '';
             var agentColor = getAgentColor(info.name, info.params);
             var paramsHtml = formatAgentParamsSummary(info.params, info.name);
             return '<span class="agent-name-block agent-name-clickable" style="' + getAgentBlockStyle(info.name, info.params) + '" title="Click to edit params: ' + escapeHtml(info.name) + '" onclick="showMinerParams(' + uid + ')">' +
-                '<span class="agent-name-label" style="color:' + agentColor + '">' + escapeHtml(info.name) + '</span>' +
+                '<span class="agent-name-label" style="color:' + agentColor + '">' + highlightAgentName(info.name) + '</span>' +
                 (paramsHtml ? '<span class="agent-params-summary" style="color:' + agentColor + '">' + paramsHtml + '</span>' : '') +
                 '</span>';
         }
@@ -3587,13 +3779,16 @@
             var start = (currentPage - 1) * rowsPerPage;
             var pageData = sorted.slice(start, start + rowsPerPage);
             var netuid = getSubnetFromInput();
+            var coldkeyCounts = {};
+            minersArray.forEach(function(x) { if (x.coldkey) coldkeyCounts[x.coldkey] = (coldkeyCounts[x.coldkey] || 0) + 1; });
             tbody.innerHTML = pageData.map(function(m) {
                 var owned = isMinerOwned(m);
                 var hotkeyEsc = (m.hotkey || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
                 var coldkeyEsc = (m.coldkey || 'N/A').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
                 var coldkeyShort = m.coldkey ? (m.coldkey.substring(0,8) + '...' + m.coldkey.substring(m.coldkey.length-6)) : 'N/A';
                 var coldkeyColor = getColdkeyColor(m.coldkey);
-                var coldkeyDisplay = '<span class="coldkey-color-dot" style="background:' + coldkeyColor + '"></span><span class="coldkey-text" title="' + coldkeyEsc + '">' + coldkeyShort + '</span>' + 
+                var ckCount = m.coldkey && coldkeyCounts[m.coldkey] > 1 ? ' <span class="ck-count-badge">' + coldkeyCounts[m.coldkey] + '</span>' : '';
+                var coldkeyDisplay = '<span class="coldkey-color-dot" style="background:' + coldkeyColor + '"></span><span class="coldkey-text" title="' + coldkeyEsc + '">' + coldkeyShort + '</span>' + ckCount +
                     (m.coldkey ? ' <i class="bi bi-clipboard copy-btn" onclick="copyToClipboard(\'' + coldkeyEsc + '\', this)"></i>' : '') +
                     (netuid === 88 ? ' <i class="bi bi-info-circle sn88-miner-info-btn" title="Investing88 miner info" onclick="event.stopPropagation(); showInvesting88Miner(' + m.uid + ',' + m.rank + ',\'' + hotkeyEsc + '\')"></i>' : '');
                 var agentCell = netuid === 79 ? renderAgentLabel(m.uid) : '';
@@ -3608,15 +3803,28 @@
                     : '';
                 var hotBookCount = netuid === 79 ? getHotBookCount(m.uid) : 0;
                 var hotBookMetrics = getUidMetrics(m.uid) || {};
-                var rowAccent = hotBookCount > 0
-                    ? ' style="' + getHotBookRowAccent(hotBookCount, hotBookMetrics.book_count || 0) + '"'
-                    : '';
-                
+                var rowStyle = '';
+                if (netuid === 79) {
+                    var agentName79 = getMinerAgentName(m.uid);
+                    var isDark = document.documentElement.classList.contains('theme-dark');
+                    if (/taker/i.test(agentName79)) {
+                        rowStyle = isDark ? 'background:rgba(120,53,15,0.35)' : 'background:rgba(180,100,40,0.12)';
+                    } else if (/maker/i.test(agentName79) || /^RandomM[A-Z]/i.test(agentName79)) {
+                        rowStyle = isDark ? 'background:rgba(30,64,120,0.45)' : 'background:rgba(59,130,246,0.1)';
+                    } else {
+                        rowStyle = isDark ? 'background:rgba(255,255,255,0.04)' : 'background:rgba(255,255,255,0.8)';
+                    }
+                    if (hotBookCount > 0) rowStyle = getHotBookRowAccent(hotBookCount, hotBookMetrics.book_count || 0);
+                } else if (hotBookCount > 0) {
+                    rowStyle = getHotBookRowAccent(hotBookCount, hotBookMetrics.book_count || 0);
+                }
+                var rowAccent = rowStyle ? ' style="' + rowStyle + '"' : '';
+
                 return '<tr class="' + (owned ? 'owned-row' : '') + '"' + rowAccent + ' title="Coldkey: ' + coldkeyEsc +
                     (hotBookCount > 0 ? ' · ' + hotBookCount + ' book(s) near 500K limit' : '') + '">' +
                     '<td class="rank-cell">#' + m.rank + '</td>' +
                     '<td class="uid-cell">' + uidDisplay + historyIcon + immuneIcon + '</td>' +
-                    '<td class="hotkey-cell">' + (m.hotkey || '').substring(0,20) + '... <i class="bi bi-clipboard copy-btn" onclick="copyToClipboard(\'' + hotkeyEsc + '\', this)"></i></td>' +
+                    '<td class="hotkey-cell" title="' + hotkeyEsc + '">' + (m.hotkey ? m.hotkey.substring(0,6) + '…' + m.hotkey.slice(-6) : '') + ' <i class="bi bi-clipboard copy-btn" onclick="copyToClipboard(\'' + hotkeyEsc + '\', this)"></i></td>' +
                     '<td class="incentive-cell ' + (owned ? 'owned' : '') + '">' + m.incentive.toFixed(4) + '%</td>' +
                     '<td>' + coldkeyDisplay + '</td>' +
                     (netuid === 88 ? '<td>' + renderSn88AssetCell(m.uid) + '</td>' : '') +

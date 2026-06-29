@@ -40,7 +40,7 @@ def record_agent_switch(
     extra: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """Append one agent switch event. Returns path or None if unchanged."""
-    if previous_agent_index == new_agent_index:
+    if previous_agent_index == new_agent_index and source not in ("params_update",):
         return None
 
     now_utc = datetime.now(timezone.utc)

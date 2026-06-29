@@ -685,8 +685,11 @@ async def get_uid_metrics(request: Request):
             if not cached:
                 raise HTTPException(status_code=502, detail="Refresh completed but cache file missing")
             metrics = filter_metrics(cached.get("metrics", {}), uids)
+        from miner_status_cache import load_prev_epoch_metrics
+        prev = load_prev_epoch_metrics()
         payload = {
             "metrics": metrics,
+            "prev_metrics": prev.get("metrics", {}) if prev else {},
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "source": "live" if uids else "file",
         }
@@ -734,11 +737,10 @@ async def get_miner_history(uid: int, request: Request):
 
 @app.get("/api/agent-history/{uid}")
 async def get_agent_history(uid: int, request: Request):
-    from agent_history import build_agent_history_response
-    from miner_history import list_my_miner_uids
+    from agent_history import build_agent_history_response, uid_history_path
 
-    if uid not in list_my_miner_uids():
-        raise HTTPException(status_code=404, detail=f"No params file for UID {uid}")
+    if not os.path.isfile(uid_history_path(uid)):
+        return {"uid": uid, "count": 0, "entries": []}
     limit_param = request.query_params.get("limit", "").strip()
     limit: Optional[int] = 50
     if limit_param:
