@@ -1,80 +1,56 @@
 #!/bin/bash
 
-# Start Backend API and Frontend servers
+# Start Backend API and Frontend servers with PM2
 
-echo "Starting SN71 Session Manager with Backend API..."
+set -e
+
+cd "$(dirname "$0")"
+
+echo "Starting Subnet Dashboard with PM2..."
 echo ""
 
-# Check if virtual environment exists
-if [ -d "venv" ]; then
-    echo "Activating virtual environment..."
-    source venv/bin/activate
-fi
-
-# Install/update dependencies
-echo "Installing dependencies..."
-pip install -r requirements.txt > /dev/null 2>&1
-
-echo ""
-echo "========================================"
-echo "Starting Backend API on port 9500..."
-echo "========================================"
-python backend_api.py &
-BACKEND_PID=$!
-
-# Wait a moment for backend to start
-sleep 2
-
-# Check if backend started successfully
-if kill -0 $BACKEND_PID 2>/dev/null; then
-    echo "✓ Backend API started (PID: $BACKEND_PID)"
-else
-    echo "✗ Failed to start Backend API"
+# Ensure pm2 is available
+if ! command -v pm2 >/dev/null 2>&1; then
+    echo "✗ pm2 is not installed or not on PATH."
+    echo "  Install it with: npm install -g pm2"
     exit 1
 fi
 
-echo ""
-echo "========================================"
-echo "Starting Frontend on port 8000..."
-echo "========================================"
-python app.py &
-FRONTEND_PID=$!
+# Ensure the log directory exists (referenced by ecosystem.config.json)
+mkdir -p logs
 
-# Wait a moment for frontend to start
-sleep 2
-
-# Check if frontend started successfully
-if kill -0 $FRONTEND_PID 2>/dev/null; then
-    echo "✓ Frontend started (PID: $FRONTEND_PID)"
-else
-    echo "✗ Failed to start Frontend"
-    kill $BACKEND_PID
-    exit 1
+# Install/update Python dependencies into the virtual environment
+if [ -x ".venv/bin/pip" ]; then
+    echo "Installing dependencies..."
+    .venv/bin/pip install -r requirements.txt > /dev/null 2>&1 || true
 fi
 
 echo ""
 echo "========================================"
-echo "Both servers are running!"
+echo "Starting backend_api (port 9900) and dashboard (port 12800)..."
+echo "========================================"
+
+# Start (or reload if already running) both apps from the ecosystem file
+pm2 startOrReload ecosystem.config.json
+
+# Persist the process list so it survives reboots (requires `pm2 startup` once)
+pm2 save > /dev/null 2>&1 || true
+
+echo ""
+pm2 list
+
+echo ""
+echo "========================================"
+echo "Both servers are managed by PM2!"
 echo "========================================"
 echo ""
 echo "Frontend:    http://localhost:12800"
 echo "Backend API: http://localhost:9900"
 echo "API Docs:    http://localhost:9900/docs"
 echo ""
-echo "Press Ctrl+C to stop both servers"
+echo "Useful commands:"
+echo "  pm2 logs dashboard        # tail frontend logs"
+echo "  pm2 logs backend_api      # tail backend logs"
+echo "  pm2 restart ecosystem.config.json"
+echo "  pm2 stop backend_api dashboard"
 echo ""
-
-# Function to handle Ctrl+C
-cleanup() {
-    echo ""
-    echo "Stopping servers..."
-    kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
-    echo "Servers stopped."
-    exit 0
-}
-
-# Trap Ctrl+C
-trap cleanup INT
-
-# Wait for processes
-wait

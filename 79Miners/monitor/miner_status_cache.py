@@ -170,6 +170,47 @@ def _apply_reg_costs(
             row["reg_cost_tao"] = cost["tao"]
 
 
+# Book-level fields that depend on the high-cardinality agent_gauges query and
+# can be missing for a cycle when that upstream query returns nothing.
+_BOOK_CARRY_FIELDS = (
+    "pnl_books_pos",
+    "pnl_books_neg",
+    "hot_book_count",
+    "book_count",
+    "max_book_volume",
+)
+
+
+def _carry_forward_book_fields(metrics: Dict[str, Any]) -> None:
+    """Fill in book-level fields the current refresh couldn't fetch.
+
+    When the book query fails, fetch_agent_display_metrics_with_warnings leaves
+    these fields absent rather than zeroing them. Copy the last known values
+    from the previous snapshot so the dashboard keeps showing real numbers
+    instead of flashing to blank/zero for a cycle.
+    """
+    if all(f in vals for vals in metrics.values() for f in _BOOK_CARRY_FIELDS):
+        return  # nothing missing
+    prev = load_daily_status()
+    if not prev:
+        return
+    prev_metrics = prev.get("metrics", {})
+    carried = 0
+    for uid_str, vals in metrics.items():
+        prev_vals = prev_metrics.get(uid_str)
+        if not prev_vals:
+            continue
+        for field in _BOOK_CARRY_FIELDS:
+            if field not in vals and field in prev_vals:
+                vals[field] = prev_vals[field]
+                carried += 1
+    if carried:
+        logger.warning(
+            "Book-level metrics missing this cycle; carried forward %d field "
+            "values from the previous snapshot", carried
+        )
+
+
 def refresh_daily_status() -> dict:
     from fee_rate import (
         append_fee_regime_history,
@@ -183,6 +224,7 @@ def refresh_daily_status() -> dict:
     )
 
     metrics = fetch_agent_display_metrics_with_warnings()
+    _carry_forward_book_fields(metrics)
     reg_info, current_block = fetch_uid_registration_info()
     for uid_str, reg_fields in reg_info.items():
         metrics.setdefault(uid_str, {}).update(reg_fields)

@@ -35,15 +35,31 @@ AUTO_SWITCH_ENABLED = os.getenv("HOT_BOOK_AUTO_SWITCH", "1").lower() not in (
 IMMUNITY_PERIOD_BLOCKS = 7200
 AUTO_SWITCH_EXEMPT_AGENTS: set = {
     a.strip()
-    for a in os.getenv("VOLUME_SWITCH_EXEMPT_AGENTS", "RandomMakerAgentHarvester").split(",")
+    for a in os.getenv("VOLUME_SWITCH_EXEMPT_AGENTS", "RandomMakerAgentHarvester", "WarriorAgent", "SpearAgent", "OFTAgent", "CBSAgent", "COCAgent").split(",")
     if a.strip()
 }
 
 
-def _find_agent_index(agents: List[dict], name: str) -> Optional[int]:
+def _find_agent_id(agents: List[dict], name: str) -> Optional[int]:
+    """Return the agent_id of the first agent with this name.
+
+    agent_index in the control file is an agent_id, so this is the value to
+    store when switching. Falls back to list position when agent_id is absent.
+    """
     for idx, agent in enumerate(agents):
         if agent.get("name") == name:
-            return idx
+            aid = agent.get("agent_id")
+            return aid if aid is not None else idx
+    return None
+
+
+def _agent_by_id(agents: List[dict], agent_id: int) -> Optional[dict]:
+    """Return the agent entry whose agent_id == agent_id (positional fallback)."""
+    for agent in agents:
+        if isinstance(agent, dict) and agent.get("agent_id") == agent_id:
+            return agent
+    if isinstance(agent_id, int) and 0 <= agent_id < len(agents):
+        return agents[agent_id]
     return None
 
 
@@ -95,23 +111,24 @@ def switch_uid_to_free_all(
         result["reason"] = "invalid_agent_index"
         return result
 
-    free_index = _find_agent_index(agents, FREE_ALL_AGENT_NAME)
-    if free_index is None:
+    free_id = _find_agent_id(agents, FREE_ALL_AGENT_NAME)
+    if free_id is None:
         result["skipped"] = True
         result["reason"] = "free_all_agent_not_found"
         return result
 
-    if current_index == free_index:
+    if current_index == free_id:
         result["skipped"] = True
         result["reason"] = "already_free_all"
         return result
 
-    previous_name = agents[current_index].get("name") if 0 <= current_index < len(agents) else None
+    prev_entry = _agent_by_id(agents, current_index)
+    previous_name = prev_entry.get("name") if prev_entry else None
     if previous_name in AUTO_SWITCH_EXEMPT_AGENTS:
         result["skipped"] = True
         result["reason"] = "exempt_agent"
         return result
-    data["agent_index"] = free_index
+    data["agent_index"] = free_id
 
     sync_result = save_and_sync_params(uid, data, uid_to_ip=uid_to_ip)
     result.update(
@@ -119,7 +136,7 @@ def switch_uid_to_free_all(
             "switched": True,
             "previous_agent": previous_name,
             "previous_agent_index": current_index,
-            "new_agent_index": free_index,
+            "new_agent_index": free_id,
             "new_agent": FREE_ALL_AGENT_NAME,
             "saved_locally": sync_result.get("saved_locally", False),
             "local_path": sync_result.get("local_path"),
@@ -139,7 +156,7 @@ def switch_uid_to_free_all(
         uid,
         current_index,
         previous_name,
-        free_index,
+        free_id,
         FREE_ALL_AGENT_NAME,
         source="auto_volume",
         miner_ip=result.get("miner_ip"),

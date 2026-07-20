@@ -1,21 +1,64 @@
 {
-  "apps": [{
-    "name": "leadpoet-manage",
-    "script": "app.py",
-    "cwd": "/work/jnh/leadpoet_manage",
-    "interpreter": "/work/jnh/leadpoet_manage/venv/bin/python",
-    "instances": 1,
-    "exec_mode": "fork",
-    "watch": false,
-    "autorestart": true,
-    "max_restarts": 10,
-    "min_uptime": "10s",
-    "env": {
-      "PYTHONUNBUFFERED": "1"
+  "apps": [
+    {
+      "name": "backend_api",
+      "script": "backend_api.py",
+      "cwd": "/root/79/subnet_dashboard",
+      "interpreter": "/root/79/subnet_dashboard/.venv/bin/python",
+      "instances": 1,
+      "exec_mode": "fork",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "error_file": "/root/79/subnet_dashboard/logs/backend_api-error.log",
+      "out_file": "/root/79/subnet_dashboard/logs/backend_api-out.log",
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+      "merge_logs": true
     },
-    "error_file": "/work/jnh/leadpoet_manage/logs/pm2-error.log",
-    "out_file": "/work/jnh/leadpoet_manage/logs/pm2-out.log",
-    "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
-    "merge_logs": true
-  }]
+    {
+      "name": "dashboard",
+      "script": "app.py",
+      "cwd": "/root/79/subnet_dashboard",
+      "interpreter": "/root/79/subnet_dashboard/.venv/bin/python",
+      "instances": 1,
+      "exec_mode": "fork",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "error_file": "/root/79/subnet_dashboard/logs/dashboard-error.log",
+      "out_file": "/root/79/subnet_dashboard/logs/dashboard-out.log",
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+      "merge_logs": true
+    },
+    {
+      "name": "status_server",
+      "script": "status_server.py",
+      "cwd": "/root/79/subnet_dashboard/79Miners/monitor",
+      "interpreter": "/root/79/subnet_dashboard/.venv/bin/python",
+      "instances": 1,
+      "exec_mode": "fork",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "STATUS_SERVER_PORT": "9800",
+        "STATUS_POLL_INTERVAL": "30",
+        "STATUS_RETENTION_SECONDS": "10800"
+      },
+      "error_file": "/root/79/subnet_dashboard/logs/status_server-error.log",
+      "out_file": "/root/79/subnet_dashboard/logs/status_server-out.log",
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+      "merge_logs": true
+    }
+  ]
 }

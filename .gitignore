@@ -10,15 +10,22 @@ __pycache__/
 venv/
 
 # Cache and data directories
-# investing88_cache/
-# miner_status/
-# miner_history/
-# fee_history/
-# agent_history/
-# volume_agent_switches/
+investing88_cache/
+miner_status/
+miner_history/
+fee_history/
+agent_history/
+volume_agent_switches/
+
+# Status server data (real-time miner status + per-book history)
+79Miners/monitor/status_history.csv
+79Miners/monitor/books_history/
 
 # Miner params (sensitive config)
-# 79Miners/params/
+79Miners/params/
+
+# RegBot run audit log (real registration triggers, timestamps, params)
+79Miners/RegBot/regbot_runs.jsonl
 
 # Log files
 logs/
@@ -30,3 +37,6 @@ logs/
 # Temp / OS
 *.tmp
 .DS_Store
+
+# Local backups of miner params (protect against rsync --delete)
+params_backups/

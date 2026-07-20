@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, HTTPException, Body
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Any
 import uvicorn
@@ -28,6 +29,7 @@ if SN88_MONITOR_DIR not in sys.path:
 MINER_STATUS_REFRESH_SECONDS = int(os.getenv("MINER_STATUS_REFRESH_SECONDS", "900"))
 FEE_REGIME_CACHE_SECONDS = int(os.getenv("FEE_REGIME_CACHE_SECONDS", "300"))
 REG_COST_CACHE_SECONDS = int(os.getenv("REG_COST_CACHE_SECONDS", "300"))
+REGBOT_BALANCE_CACHE_SECONDS = int(os.getenv("REGBOT_BALANCE_CACHE_SECONDS", "60"))
 INVESTING88_CACHE_SECONDS = int(os.getenv("INVESTING88_CACHE_SECONDS", "300"))
 INVESTING88_SYNC_HOUR = int(os.getenv("INVESTING88_SYNC_HOUR", "19"))
 INVESTING88_SYNC_INTERVAL_SECONDS = int(os.getenv("INVESTING88_SYNC_INTERVAL_SECONDS", "3600"))
@@ -38,6 +40,7 @@ INVESTING88_SYNC_SCRIPT = os.path.join(SN88_MONITOR_DIR, "investing88_cache.py")
 DASHBOARD_ROOT = os.path.dirname(__file__)
 _fee_regime_cache: dict[str, Any] = {"payload": None, "expires_at": 0.0}
 _reg_cost_cache: dict[int, dict[str, Any]] = {}
+_regbot_balance_cache: dict[str, dict[str, Any]] = {}
 _investing88_cache: dict[int, dict[str, Any]] = {}
 
 
@@ -142,12 +145,12 @@ app.mount("/asset", StaticFiles(directory="asset"), name="asset")
 # Homepage: Miners page (default first load)
 @app.get("/", response_class=HTMLResponse)
 async def home_page(request: Request):
-    return templates.TemplateResponse("miners.html", {"request": request})
+    return templates.TemplateResponse(request, "miners.html")
 
 # Miners page (also at / for homepage)
 @app.get("/miners", response_class=HTMLResponse)
 async def miners_page(request: Request):
-    return templates.TemplateResponse("miners.html", {"request": request})
+    return templates.TemplateResponse(request, "miners.html")
 
 # --- Metagraph via Bittensor (configurable netuid, finney) ---
 def _load_metagraph_from_bittensor(netuid: int = 71):
@@ -259,6 +262,11 @@ def _load_metagraph_from_bittensor(netuid: int = 71):
 
 
 MINER_PARAMS_DIR = os.path.join(os.path.dirname(__file__), "79Miners", "params")
+# Canonical per-agent default params (dispatch_example.json). Bulk agent edits merge
+# their modified params into the matching agent entry here as well as into every miner.
+AGENT_DEFAULTS_FILE = os.getenv(
+    "AGENT_DEFAULTS_FILE", "/root/79/Paul-SuperRegBot/myAgents/dispatch_example.json"
+)
 MINER_PARAMS_REMOTE_DIR = os.getenv("MINER_PARAMS_REMOTE_DIR", "/root/79/sn-79")
 MINER_PARAMS_RSYNC_USER = os.getenv("MINER_PARAMS_RSYNC_USER", "root")
 MINER_PARAMS_RSYNC_SSH_OPTS = os.getenv(
@@ -274,7 +282,10 @@ SERVER_NICKNAMES = {
     "65.108.232.96": "Server1",
     "65.108.108.139": "Server2",
     "65.109.87.169": "Server3",
-    "95.216.27.87": "Server4",
+    "178.16.143.193": "Server4",
+    "144.91.111.126": "Server5",
+    "65.109.65.81": "Server6",
+    "84.32.34.89": "Server7",
 }
 
 
@@ -325,6 +336,49 @@ def _coerce_param_value(original: Any, new_value: Any) -> Any:
     return new_value
 
 
+def _merge_params(current: dict, set_map: dict, remove: list) -> dict:
+    """Merge a partial change into an existing params object, leaving other keys
+    untouched. `remove` keys are dropped; `set_map` keys are added/overwritten
+    (type-coerced to the existing value's type when the key already exists)."""
+    out = dict(current) if isinstance(current, dict) else {}
+    for key in remove:
+        out.pop(key, None)
+    for key, value in set_map.items():
+        if key in current:
+            out[key] = _coerce_param_value(current[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _apply_defaults_bulk(agent_id: int, set_map: dict, remove: list) -> bool:
+    """Merge a partial change into the dispatch_example.json entry whose agent_id
+    matches. Returns True if an entry was found and the file rewritten."""
+    path = AGENT_DEFAULTS_FILE
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
+    agents = data.get("agents")
+    if not isinstance(agents, list):
+        return False
+    updated = False
+    for agent in agents:
+        if isinstance(agent, dict) and agent.get("agent_id") == agent_id:
+            current = agent.get("params")
+            agent["params"] = _merge_params(current if isinstance(current, dict) else {}, set_map, remove)
+            updated = True
+            break
+    if updated:
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, path)
+    return updated
+
+
 def _save_miner_params_file(uid: int, data: dict) -> str:
     os.makedirs(MINER_PARAMS_DIR, exist_ok=True)
     path = _miner_params_path(uid)
@@ -368,6 +422,28 @@ def _display_param_keys_for_agent(agent_name: str) -> list[str]:
     return keys
 
 
+def _active_agent_pos(agents: list, agent_index: int) -> Optional[int]:
+    """Return the list position of the active agent.
+
+    agent_index identifies the agent by its `agent_id` field (not list
+    position): find the entry whose agent_id == agent_index. Falls back to
+    positional lookup for older files where agent_id isn't set. Returns None
+    if nothing matches.
+    """
+    for i, agent in enumerate(agents):
+        if isinstance(agent, dict) and agent.get("agent_id") == agent_index:
+            return i
+    if 0 <= agent_index < len(agents):
+        return agent_index
+    return None
+
+
+def _select_active_agent(agents: list, agent_index: int) -> Optional[dict]:
+    """Return the active agent entry (see _active_agent_pos for selection rule)."""
+    pos = _active_agent_pos(agents, agent_index)
+    return agents[pos] if pos is not None else None
+
+
 def _read_miner_agent_summary(path: str) -> Optional[dict]:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -376,8 +452,8 @@ def _read_miner_agent_summary(path: str) -> Optional[dict]:
         server = SERVER_NICKNAMES.get(miner_ip, miner_ip or None)
         agents = data.get("agents") or []
         agent_index = int(data.get("agent_index", 0))
-        if 0 <= agent_index < len(agents):
-            agent = agents[agent_index]
+        agent = _select_active_agent(agents, agent_index)
+        if agent is not None:
             name = agent.get("name")
             if not isinstance(name, str):
                 return None
@@ -456,8 +532,10 @@ async def update_miner_params(uid: int, payload: dict = Body(...)):
             agent_index = int(agent_index)
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="Invalid agent_index in params file")
-    if agent_index < 0 or agent_index >= len(agents):
-        raise HTTPException(status_code=400, detail=f"agent_index out of range (0-{len(agents) - 1})")
+    # agent_index is the agent's agent_id, not its list position.
+    active_pos = _active_agent_pos(agents, agent_index)
+    if active_pos is None:
+        raise HTTPException(status_code=400, detail=f"No agent with agent_id {agent_index}")
 
     data["agent_index"] = agent_index
 
@@ -465,17 +543,23 @@ async def update_miner_params(uid: int, payload: dict = Body(...)):
     if not isinstance(new_params, dict):
         raise HTTPException(status_code=400, detail="params must be an object")
 
-    current_params = agents[agent_index].get("params", {})
+    current_params = agents[active_pos].get("params", {})
     if not isinstance(current_params, dict):
         raise HTTPException(status_code=400, detail="Active agent params must be an object")
 
-    updated_params = dict(current_params)
+    # Replace the active agent's params with exactly what was sent, so the editor's
+    # add/remove take effect: new keys are accepted (add), keys the caller omits are
+    # dropped (remove), and keys that already exist are still type-coerced to match the
+    # current value's type. Callers send the agent's full param set, so this is a
+    # replace, not a merge.
+    updated_params = {}
     for key, value in new_params.items():
-        if key not in current_params:
-            raise HTTPException(status_code=400, detail=f"Unknown param key: {key}")
-        updated_params[key] = _coerce_param_value(current_params[key], value)
+        if key in current_params:
+            updated_params[key] = _coerce_param_value(current_params[key], value)
+        else:
+            updated_params[key] = value
 
-    agents[agent_index]["params"] = updated_params
+    agents[active_pos]["params"] = updated_params
     data["agents"] = agents
 
     sync_ip = payload.get("sync_ip")
@@ -493,13 +577,26 @@ async def update_miner_params(uid: int, payload: dict = Body(...)):
     from agent_history import record_agent_switch
 
     agent_switched = agent_index != previous_agent_index
-    prev_agent = (
-        agents[previous_agent_index].get("name")
-        if 0 <= previous_agent_index < len(agents)
-        else None
-    )
-    new_agent = agents[agent_index].get("name")
+    prev_pos = _active_agent_pos(agents, previous_agent_index)
+    prev_agent = agents[prev_pos].get("name") if prev_pos is not None else None
+    new_agent = agents[active_pos].get("name")
     source = "manual" if agent_switched else "params_update"
+
+    # History records only the params actually modified in this edit — keys added or changed
+    # vs the previous saved params, plus any removed keys — instead of the full param set,
+    # mirroring the batch endpoint's diff-style record.
+    changed_params = {
+        key: value
+        for key, value in updated_params.items()
+        if key not in current_params or current_params[key] != value
+    }
+    removed_params = [key for key in current_params if key not in updated_params]
+    history_extra = None
+    if not agent_switched and (changed_params or removed_params):
+        history_extra = {"params": changed_params}
+        if removed_params:
+            history_extra["removed"] = removed_params
+
     agent_history_path = record_agent_switch(
         uid,
         previous_agent_index,
@@ -511,7 +608,7 @@ async def update_miner_params(uid: int, payload: dict = Body(...)):
         rsynced=rsync_ok,
         saved_locally=True,
         rsync_message=rsync_message if not rsync_ok else None,
-        extra={"params": updated_params} if not agent_switched else None,
+        extra=history_extra,
     )
 
     return {
@@ -524,6 +621,180 @@ async def update_miner_params(uid: int, payload: dict = Body(...)):
         "agent_switched": agent_switched,
         "agent_history_path": agent_history_path,
         "data": data,
+    }
+
+
+@app.put("/api/agent-bulk")
+async def update_agent_bulk(payload: dict = Body(...)):
+    """Apply ONE partial params change to every miner currently running a given
+    agent, plus to that agent's canonical defaults (dispatch_example.json).
+
+    Only the modified params are touched on each miner — every other param on the
+    miner is left as-is (a merge, not a replace). Optionally switches those miners
+    to a different agent (agent_index != the target agent's id), carrying the merged
+    params onto the newly-active agent.
+
+    Body:
+      target_agent: str   — select miners whose ACTIVE agent name == this
+      agent_index: int    — agent_id to make active on each miner (== target's id
+                            for a same-agent param edit; a different id switches)
+      set:   {key: value} — params to add/overwrite (diff vs the agent's defaults)
+      remove: [key, ...]  — params to delete
+      sync:  bool         — rsync to the miner box (default True)
+    """
+    # uid-scoped mode: when an explicit `uids` list is given, apply the change to exactly
+    # those miners (a dashboard selection / filtered subset) regardless of which agent each
+    # runs, and DO NOT touch the canonical defaults. Otherwise select miners by active-agent
+    # name (target_agent) and also update that agent's defaults.
+    uids_raw = payload.get("uids")
+    uid_scoped = isinstance(uids_raw, list) and len(uids_raw) > 0
+    uid_set = None
+    if uid_scoped:
+        uid_set = set()
+        for u in uids_raw:
+            try:
+                uid_set.add(int(u))
+            except (TypeError, ValueError):
+                continue
+        if not uid_set:
+            raise HTTPException(status_code=400, detail="uids must contain integers")
+
+    target_agent = payload.get("target_agent")
+    if not uid_scoped and (not isinstance(target_agent, str) or not target_agent):
+        raise HTTPException(status_code=400, detail="target_agent (string) required")
+    set_map = payload.get("set", {})
+    remove = payload.get("remove", [])
+    if not isinstance(set_map, dict):
+        raise HTTPException(status_code=400, detail="set must be an object")
+    if not isinstance(remove, list):
+        raise HTTPException(status_code=400, detail="remove must be a list")
+    remove = [str(k) for k in remove]
+
+    if "agent_index" in payload and payload["agent_index"] is not None:
+        try:
+            agent_index = int(payload["agent_index"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="agent_index must be an integer")
+    else:
+        agent_index = None  # resolved per-miner below from its current active agent
+    do_sync = payload.get("sync", True)
+
+    # 1. Update the canonical defaults for the (possibly newly-selected) agent. When
+    #    no explicit agent_index is given, fall back to the target agent's own id.
+    #    Skipped entirely in uid-scoped mode — a subset edit must not move the defaults.
+    defaults_updated = False
+    if not uid_scoped:
+        defaults_agent_id = agent_index
+        if defaults_agent_id is None:
+            try:
+                with open(AGENT_DEFAULTS_FILE, "r", encoding="utf-8") as f:
+                    dfl = json.load(f)
+                for a in dfl.get("agents", []):
+                    if isinstance(a, dict) and a.get("name") == target_agent:
+                        defaults_agent_id = a.get("agent_id")
+                        break
+            except (OSError, json.JSONDecodeError):
+                defaults_agent_id = None
+        defaults_updated = (
+            _apply_defaults_bulk(defaults_agent_id, set_map, remove)
+            if defaults_agent_id is not None
+            else False
+        )
+
+    # 2. Collect the target miners: an explicit uid set (uid-scoped), else every miner whose
+    #    active agent name == target_agent.
+    targets = []  # (uid, path, data, previous_agent_index)
+    if os.path.isdir(MINER_PARAMS_DIR):
+        for fn in os.listdir(MINER_PARAMS_DIR):
+            if not (fn.startswith("run_miner_") and fn.endswith(".json")):
+                continue
+            try:
+                uid = int(fn[len("run_miner_") : -len(".json")])
+            except ValueError:
+                continue
+            if uid_scoped and uid not in uid_set:
+                continue
+            path = os.path.join(MINER_PARAMS_DIR, fn)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            agents = data.get("agents")
+            if not isinstance(agents, list) or not agents:
+                continue
+            try:
+                prev_index = int(data.get("agent_index", 0))
+            except (TypeError, ValueError):
+                continue
+            if not uid_scoped:
+                active = _select_active_agent(agents, prev_index)
+                if active is None or active.get("name") != target_agent:
+                    continue
+            targets.append((uid, path, data, prev_index))
+
+    from agent_history import record_agent_switch
+
+    async def apply_one(uid, path, data, prev_index):
+        agents = data["agents"]
+        new_index = agent_index if agent_index is not None else prev_index
+        pos = _active_agent_pos(agents, new_index)
+        if pos is None:
+            return {"uid": uid, "ok": False, "error": f"no agent with agent_id {new_index}"}
+        current = agents[pos].get("params")
+        agents[pos]["params"] = _merge_params(current if isinstance(current, dict) else {}, set_map, remove)
+        data["agent_index"] = new_index
+        miner_ip = data.get("miner_ip", "") or ""
+        local_path = _save_miner_params_file(uid, data)
+        rsync_ok, rsync_message = (True, "sync skipped")
+        if do_sync:
+            rsync_ok, rsync_message = await _rsync_miner_params(uid, local_path, miner_ip)
+        switched = new_index != prev_index
+        prev_pos = _active_agent_pos(agents, prev_index)
+        prev_agent = agents[prev_pos].get("name") if prev_pos is not None else None
+        new_agent = agents[pos].get("name")
+        record_agent_switch(
+            uid,
+            prev_index,
+            prev_agent,
+            new_index,
+            new_agent,
+            source="manual" if switched else "params_update",
+            miner_ip=miner_ip or None,
+            rsynced=rsync_ok,
+            saved_locally=True,
+            rsync_message=rsync_message if not rsync_ok else None,
+            extra={"params": set_map, "removed": remove} if (set_map or remove) else None,
+        )
+        return {
+            "uid": uid,
+            "ok": True,
+            "rsynced": rsync_ok,
+            "rsync_message": rsync_message,
+            "miner_ip": miner_ip,
+            "agent_switched": switched,
+        }
+
+    results = await asyncio.gather(
+        *[apply_one(*t) for t in targets], return_exceptions=True
+    )
+    miners = []
+    for t, r in zip(targets, results):
+        if isinstance(r, Exception):
+            miners.append({"uid": t[0], "ok": False, "error": str(r)})
+        else:
+            miners.append(r)
+
+    return {
+        "ok": True,
+        "agent": target_agent if not uid_scoped else None,
+        "uid_scoped": uid_scoped,
+        "agent_index": agent_index,
+        "defaults_updated": defaults_updated,
+        "count": len(miners),
+        "updated": sum(1 for m in miners if m.get("ok")),
+        "synced": sum(1 for m in miners if m.get("rsynced")),
+        "miners": miners,
     }
 
 
@@ -769,17 +1040,33 @@ async def get_fee_regime(request: Request):
     ):
         return _fee_regime_cache["payload"]
 
+    def _cached_fallback(reason: str):
+        """Serve the last-good regime summary during a transient upstream miss
+        instead of failing the whole panel."""
+        cached = _fee_regime_cache["payload"]
+        if cached is not None:
+            logger.warning("Fee regime unavailable (%s); serving cached summary", reason)
+            stale = dict(cached)
+            stale["stale"] = True
+            return stale
+        return None
+
     try:
         maker, taker = await asyncio.to_thread(fetch_fee_rates)
         summary = build_fee_regime_summary(maker, taker)
         if summary.get("error"):
+            fallback = _cached_fallback(summary["error"])
+            if fallback is not None:
+                return fallback
             raise HTTPException(status_code=502, detail=summary["error"])
         if not include_books:
             summary.pop("books", None)
         summary["updated_at"] = datetime.now(timezone.utc).isoformat()
-        if not include_books:
-            _fee_regime_cache["payload"] = summary
-            _fee_regime_cache["expires_at"] = now + FEE_REGIME_CACHE_SECONDS
+        # Cache the regime summary (without per-book payload) both for reuse and
+        # as a fallback during transient upstream misses. Populate on the books
+        # path too so a fallback exists even if the first request asked for books.
+        _fee_regime_cache["payload"] = {k: v for k, v in summary.items() if k != "books"}
+        _fee_regime_cache["expires_at"] = now + FEE_REGIME_CACHE_SECONDS
         return summary
     except HTTPException:
         raise
@@ -787,6 +1074,9 @@ async def get_fee_regime(request: Request):
         logger.error("Fee regime module import failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Fee regime module unavailable: {e}")
     except Exception as e:
+        fallback = _cached_fallback(str(e))
+        if fallback is not None:
+            return fallback
         logger.error("Fee regime fetch failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -904,9 +1194,28 @@ async def get_investing88_miner(uid: int, request: Request):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+_I88_SCORE_FIELDS = (
+    "asset", "days", "last", "score", "value", "lsr", "mar",
+    "risk_percent", "odds_percent", "daily_percent", "yield_percent",
+)
+
+
+def _extract_i88_scores(payload: dict) -> dict:
+    """Pull per-uid score fields out of an Investing88 cache payload."""
+    scores: dict = {}
+    for uid_str, miner in (payload.get("miners") or {}).items():
+        score = miner.get("score") if isinstance(miner, dict) else None
+        if not isinstance(score, dict):
+            continue
+        scores[uid_str] = {k: score.get(k) for k in _I88_SCORE_FIELDS}
+    return scores
+
+
 @app.get("/api/investing88/days")
 async def get_investing88_days(request: Request):
     import asyncio
+    import os
+    import re
     import time
 
     refresh = request.query_params.get("refresh", "").lower() in ("1", "true", "yes")
@@ -917,30 +1226,33 @@ async def get_investing88_days(request: Request):
             return cached["payload"]
 
     try:
-        from investing88_cache import load_cache_payload
+        from investing88_cache import load_cache_payload, CACHE_DIR
 
         payload = await asyncio.to_thread(load_cache_payload)
         if not payload:
             raise HTTPException(status_code=502, detail="Investing88 cache is unavailable")
-        scores: dict = {}
-        for uid_str, miner in (payload.get("miners") or {}).items():
-            score = miner.get("score") if isinstance(miner, dict) else None
-            if not isinstance(score, dict):
-                continue
-            scores[uid_str] = {
-                "asset": score.get("asset"),
-                "days": score.get("days"),
-                "last": score.get("last"),
-                "score": score.get("score"),
-                "value": score.get("value"),
-                "lsr": score.get("lsr"),
-                "mar": score.get("mar"),
-                "risk_percent": score.get("risk_percent"),
-                "odds_percent": score.get("odds_percent"),
-                "daily_percent": score.get("daily_percent"),
-                "yield_percent": score.get("yield_percent"),
-            }
-        result = {"days": payload.get("days", {}), "scores": scores}
+        scores = _extract_i88_scores(payload)
+
+        # Previous-day scores for day-over-day deltas: second-newest dated file.
+        prev_scores: dict = {}
+        try:
+            dated = sorted(
+                n[:-5]
+                for n in os.listdir(CACHE_DIR)
+                if re.match(r"\d{4}-\d{2}-\d{2}\.json$", n)
+            )
+            if len(dated) >= 2:
+                prev_payload = await asyncio.to_thread(load_cache_payload, dated[-2])
+                if prev_payload:
+                    prev_scores = _extract_i88_scores(prev_payload)
+        except Exception as prev_exc:
+            logger.warning("Investing88 prev-day scores unavailable: %s", prev_exc)
+
+        result = {
+            "days": payload.get("days", {}),
+            "scores": scores,
+            "prev_scores": prev_scores,
+        }
         _investing88_cache[-1] = {"payload": result, "expires_at": now + INVESTING88_CACHE_SECONDS}
         return result
     except ImportError as e:
@@ -972,6 +1284,129 @@ async def sync_investing88_cache():
         return get_cache_status()
     except Exception as e:
         logger.error("Investing88 manual sync failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ==================== RegBot (SN79 registration + miner launch) ====================
+# Triggers Paul-SuperRegBot/run79.sh on a remote server via SSH. This spends
+# real TAO (up to reglimit per hotkey, max_count hotkeys) and launches a live
+# pm2 miner on success — every trigger is written to a local audit log.
+
+class RegBotRunRequest(BaseModel):
+    server: str
+    dispatch_agent: str
+    reglimit: float
+    max_count: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RegBotKillRequest(BaseModel):
+    server: str
+    run_id: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+@app.get("/api/regbot/presets")
+async def regbot_presets():
+    from regbot import get_server_presets, get_dispatch_agent_options
+
+    return {
+        "servers": get_server_presets(),
+        "dispatch_agents": get_dispatch_agent_options(),
+    }
+
+
+@app.post("/api/regbot/run")
+async def regbot_run(payload: RegBotRunRequest):
+    from regbot import trigger_run, RegBotError
+
+    try:
+        return await trigger_run(
+            payload.server, payload.dispatch_agent, payload.reglimit, payload.max_count
+        )
+    except RegBotError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("RegBot run failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/regbot/log")
+async def regbot_log(server: str, run_id: str, lines: int = 200):
+    from regbot import tail_log, RegBotError
+
+    try:
+        return await tail_log(server, run_id, lines)
+    except RegBotError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("RegBot log fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/regbot/kill")
+async def regbot_kill(payload: RegBotKillRequest):
+    from regbot import kill_run, RegBotError
+
+    try:
+        result = await kill_run(payload.server, payload.run_id)
+    except RegBotError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("RegBot kill failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+    if result.get("result") == "KILL_FAILED":
+        raise HTTPException(
+            status_code=502,
+            detail="Process did not die even after SIGKILL — it may be stuck in "
+            "uninterruptible I/O, or the pidfile is stale from an older run. "
+            "Check the server manually.",
+        )
+    return result
+
+
+@app.get("/api/regbot/balance")
+async def regbot_balance(server: str, refresh: bool = False):
+    import time
+    from regbot import get_server_balance, RegBotError
+
+    now = time.time()
+    cached = _regbot_balance_cache.get(server)
+    if not refresh and cached and now < cached.get("expires_at", 0):
+        return cached["payload"]
+
+    try:
+        payload = await get_server_balance(server)
+        _regbot_balance_cache[server] = {
+            "payload": payload,
+            "expires_at": now + REGBOT_BALANCE_CACHE_SECONDS,
+        }
+        return payload
+    except RegBotError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("RegBot balance fetch failed for server=%s: %s", server, e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/regbot/history")
+async def regbot_history(limit: int = 50):
+    from regbot import list_recent_runs
+
+    return {"runs": list_recent_runs(limit)}
+
+
+@app.get("/api/regbot/active")
+async def regbot_active():
+    from regbot import get_active_runs
+
+    try:
+        return await get_active_runs()
+    except Exception as e:
+        logger.error("RegBot active-run scan failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
 
 

@@ -120,6 +120,27 @@ def get_current_block(sub: bt.Subtensor, try_limit: Optional[int] = 5) -> Option
     return None
 
 
+def get_balance_for_address(
+    address: str,
+    endpoint: str = DEFAULT_ENDPOINT,
+) -> Optional[dict]:
+    """Return the free TAO balance for a coldkey ss58 address."""
+    sub = connect_subtensor(endpoint, try_limit=3, verbose=False)
+    if sub is None:
+        return None
+    try:
+        balance = sub.get_balance(address)
+        rao = int(balance)
+        return {"address": address, "rao": rao, "tao": float(rao) / pow(10, 9)}
+    except Exception:
+        return None
+    finally:
+        try:
+            sub.close()
+        except Exception:
+            pass
+
+
 def get_registration_price_from_subtensor(
     sub: bt.Subtensor,
     netuid: int,

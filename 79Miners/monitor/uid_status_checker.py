@@ -148,14 +148,22 @@ def book_volume_warn_threshold() -> float:
 
 
 def query_agent_gauge_all_uids_books(scraper, gauge: str) -> Dict[int, Dict[str, float]]:
-    """Return {uid: {book_id: latest_value}} for one agent gauge across all UIDs."""
+    """Return {uid: {book_id: latest_value}} for one agent gauge across all UIDs.
+
+    This is a high-cardinality query (~33K series for one gauge). The TAOS
+    datasource intermittently returns an empty 200 for it — most often on the
+    first call from a fresh scraper (cold Cloudflare clearance). Retry several
+    times with backoff so an empty result is a true "no data", not a transient
+    miss. A coarse step keeps the response small (we only use the latest sample).
+    """
     q = (f'agent_gauges{{wallet=~"{WALLET}", agent_gauge_name="{gauge}", '
          f'netuid="{NETUID}"}}')
-    for attempt in range(2):
+    attempts = 4
+    for attempt in range(attempts):
         now = int(time.time())
         r = scraper.post(
             f"{API_BASE}/query_range",
-            data={"query": q, "start": str(now - 600), "end": str(now), "step": "60"},
+            data={"query": q, "start": str(now - 600), "end": str(now), "step": "300"},
             timeout=30,
         )
         if r.status_code == 200:
@@ -176,18 +184,25 @@ def query_agent_gauge_all_uids_books(scraper, gauge: str) -> Dict[int, Dict[str,
                     continue
             if out:
                 return out
-        if attempt == 0:
-            time.sleep(2)
+        if attempt < attempts - 1:
+            time.sleep(2 * (attempt + 1))
     return {}
 
 
-def fetch_book_volume_warnings(scraper=None) -> Dict[int, Dict[str, Optional[float]]]:
-    """Per-UID book volume warning stats for the 500K / book daily limit."""
+def fetch_book_volume_warnings(scraper=None) -> Optional[Dict[int, Dict[str, Optional[float]]]]:
+    """Per-UID book volume warning stats for the 500K / book daily limit.
+
+    Returns None (not {}) when the upstream book query yields nothing, so the
+    caller can tell "no books fetched" apart from "miner genuinely has 0 books"
+    and avoid overwriting good data with zeros.
+    """
     own_scraper = scraper is None
     if own_scraper:
         scraper = create_scraper()
     warn_at = book_volume_warn_threshold()
     books_by_uid = query_agent_gauge_all_uids_books(scraper, "daily_volume")
+    if not books_by_uid:
+        return None
     out: Dict[int, Dict[str, Optional[float]]] = {}
     for uid, books in books_by_uid.items():
         if not books:
@@ -201,12 +216,18 @@ def fetch_book_volume_warnings(scraper=None) -> Dict[int, Dict[str, Optional[flo
     return out
 
 
-def fetch_pnl_books_counts(scraper=None) -> Dict[int, Dict[str, int]]:
-    """Per-UID count of books with positive vs negative realized_pnl."""
+def fetch_pnl_books_counts(scraper=None) -> Optional[Dict[int, Dict[str, int]]]:
+    """Per-UID count of books with positive vs negative realized_pnl.
+
+    Returns None (not {}) when the upstream book query yields nothing, so the
+    caller can avoid caching all-zero pnl-book counts on a transient miss.
+    """
     own_scraper = scraper is None
     if own_scraper:
         scraper = create_scraper()
     books_by_uid = query_agent_gauge_all_uids_books(scraper, "realized_pnl")
+    if not books_by_uid:
+        return None
     out: Dict[int, Dict[str, int]] = {}
     for uid, books in books_by_uid.items():
         pnls = list(books.values())
@@ -257,16 +278,21 @@ def fetch_agent_display_metrics_with_warnings(
             uid = int(uid_str)
         except ValueError:
             continue
-        warn = warnings.get(uid)
-        if warn:
-            metrics[uid_str].update(warn)
-        else:
-            metrics[uid_str]["hot_book_count"] = 0
-            metrics[uid_str]["book_count"] = 0
-            metrics[uid_str]["max_book_volume"] = None
-        pb = pnl_books.get(uid, {})
-        metrics[uid_str]["pnl_books_pos"] = pb.get("pnl_books_pos", 0)
-        metrics[uid_str]["pnl_books_neg"] = pb.get("pnl_books_neg", 0)
+        # Leave book fields absent when the upstream query failed (None) so a
+        # transient miss doesn't get written as real zeros; the cache layer
+        # carries forward the last known values instead.
+        if warnings is not None:
+            warn = warnings.get(uid)
+            if warn:
+                metrics[uid_str].update(warn)
+            else:
+                metrics[uid_str]["hot_book_count"] = 0
+                metrics[uid_str]["book_count"] = 0
+                metrics[uid_str]["max_book_volume"] = None
+        if pnl_books is not None:
+            pb = pnl_books.get(uid, {})
+            metrics[uid_str]["pnl_books_pos"] = pb.get("pnl_books_pos", 0)
+            metrics[uid_str]["pnl_books_neg"] = pb.get("pnl_books_neg", 0)
     return metrics
 
 
