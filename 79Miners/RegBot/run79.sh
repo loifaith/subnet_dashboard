@@ -28,9 +28,22 @@ TELEGRAM_CHAT_ID="-1003640047338"
 # many hotkeys to register. Override by exporting before running, e.g.:
 #   DISPATCH_AGENT=RandomTakerAgentBeta REGLIMIT=0.05 MAX_COUNT=3 ./run79.example.sh
 DISPATCH_AGENT="${DISPATCH_AGENT:-WarriorAgent}"
+# Some agent_ids in dispatch_example.json share the same DISPATCH_AGENT name
+# but carry different tuned params (e.g. two GammaPrimeAgent variants) —
+# --dispatch-agent (by name) always resolves to the FIRST same-named entry,
+# so picking a later duplicate requires --dispatch-index (by agent_id)
+# instead. Set DISPATCH_INDEX to select a specific agent_id unambiguously;
+# leave it empty to dispatch by name as before.
+DISPATCH_INDEX="${DISPATCH_INDEX:-}"
 REGLIMIT="${REGLIMIT:-0.1051}"
 MAX_COUNT="${MAX_COUNT:-3}"
 WALLET="${WALLET:-bittensor001}"  # funded mainnet coldkey
+
+if [ -n "$DISPATCH_INDEX" ]; then
+    DISPATCH_ARG="--dispatch-index $DISPATCH_INDEX"
+else
+    DISPATCH_ARG="--dispatch-agent $DISPATCH_AGENT"
+fi
 
 run_creg79() {
     "$VENV_PYTHON" "$(pwd)/creg79.py" \
@@ -40,11 +53,12 @@ run_creg79() {
       --launch-miner \
       --miner-repo /root/79/sn-79 \
       --agent-preset dispatcher \
-      --dispatch-agent "$DISPATCH_AGENT" \
+      $DISPATCH_ARG \
       --no-check-whitelist \
       --connect-retries 10 \
       --connect-retry-base 3 \
       --reglimit "$REGLIMIT" \
+      --feelimit "$REGLIMIT" \
       --max-count "$MAX_COUNT" \
       --telegram-token "${TELEGRAM_BOT_TOKEN}" \
       --telegram-chat-id "${TELEGRAM_CHAT_ID}"
@@ -61,11 +75,12 @@ else
       --launch-miner \
       --miner-repo /root/79/sn-79 \
       --agent-preset dispatcher \
-      --dispatch-agent "$DISPATCH_AGENT" \
+      $DISPATCH_ARG \
       --no-check-whitelist \
       --connect-retries 10 \
       --connect-retry-base 3 \
       --reglimit "$REGLIMIT" \
+      --feelimit "$REGLIMIT" \
       --max-count "$MAX_COUNT" \
       --telegram-token "${TELEGRAM_BOT_TOKEN}" \
       --telegram-chat-id "${TELEGRAM_CHAT_ID}"

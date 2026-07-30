@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Request, HTTPException, Body
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, HTTPException, Body, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Any
+from urllib.parse import quote
 import uvicorn
 import logging
 import os
@@ -14,6 +15,8 @@ import asyncio
 import shlex
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+import auth
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,19 +32,28 @@ if SN88_MONITOR_DIR not in sys.path:
 MINER_STATUS_REFRESH_SECONDS = int(os.getenv("MINER_STATUS_REFRESH_SECONDS", "900"))
 FEE_REGIME_CACHE_SECONDS = int(os.getenv("FEE_REGIME_CACHE_SECONDS", "300"))
 REG_COST_CACHE_SECONDS = int(os.getenv("REG_COST_CACHE_SECONDS", "300"))
-REGBOT_BALANCE_CACHE_SECONDS = int(os.getenv("REGBOT_BALANCE_CACHE_SECONDS", "60"))
+REGBOT_BALANCE_CACHE_SECONDS = int(os.getenv("REGBOT_BALANCE_CACHE_SECONDS", "300"))
 INVESTING88_CACHE_SECONDS = int(os.getenv("INVESTING88_CACHE_SECONDS", "300"))
 INVESTING88_SYNC_HOUR = int(os.getenv("INVESTING88_SYNC_HOUR", "19"))
 INVESTING88_SYNC_INTERVAL_SECONDS = int(os.getenv("INVESTING88_SYNC_INTERVAL_SECONDS", "3600"))
 INVESTING88_SYNC_TZ = os.getenv("INVESTING88_SYNC_TZ", "Asia/Tokyo")
 UID_STATUS_CACHE_MAX = int(os.getenv("UID_STATUS_CACHE_MAX", "256"))
+# How often to refresh the warm SSH master connections to the miner boxes. Must be shorter
+# than the SSH ControlPersist window (600s) so masters never expire between refreshes.
+MINER_PARAMS_KEEPALIVE_SECONDS = int(os.getenv("MINER_PARAMS_KEEPALIVE_SECONDS", "300"))
+SIM_ID_POLL_SECONDS = int(os.getenv("SIM_ID_POLL_SECONDS", "60"))
+# @sn79_sim_id_bot, posting to the "SN79 Sim ID Alert" channel it's admin in.
+SIM_ID_TELEGRAM_BOT_TOKEN = os.getenv(
+    "SIM_ID_TELEGRAM_BOT_TOKEN", "8453130208:AAF4awFThe9zakRRlIH5-Ov2fki-55BNJBk"
+)
+SIM_ID_TELEGRAM_CHAT_ID = os.getenv("SIM_ID_TELEGRAM_CHAT_ID", "-1004372773110")
 REFRESH_STATUS_SCRIPT = os.path.join(MONITOR_DIR, "miner_status_cache.py")
 INVESTING88_SYNC_SCRIPT = os.path.join(SN88_MONITOR_DIR, "investing88_cache.py")
 DASHBOARD_ROOT = os.path.dirname(__file__)
 _fee_regime_cache: dict[str, Any] = {"payload": None, "expires_at": 0.0}
 _reg_cost_cache: dict[int, dict[str, Any]] = {}
-_regbot_balance_cache: dict[str, dict[str, Any]] = {}
 _investing88_cache: dict[int, dict[str, Any]] = {}
+_sim_id_state: dict[str, Any] = {"last": None}
 
 
 async def _run_status_refresh_subprocess(timeout: float = 600.0) -> None:
@@ -112,10 +124,65 @@ async def _investing88_daily_sync_worker() -> None:
             logger.error("Investing88 cache sync failed: %s", exc)
 
 
+async def _regbot_balance_refresh_worker() -> None:
+    """Refresh every RegBot coldkey's balance to a file every
+    REGBOT_BALANCE_CACHE_SECONDS, so /api/regbot/balance reads are served
+    from disk instead of blocking on a live chain call per request."""
+    from regbot import refresh_balance_cache
+
+    while True:
+        try:
+            await refresh_balance_cache()
+        except Exception as exc:
+            logger.error("RegBot balance cache refresh failed: %s", exc)
+        await asyncio.sleep(REGBOT_BALANCE_CACHE_SECONDS)
+
+
+async def _sim_id_watch_worker() -> None:
+    """Poll the live TAOS sim epoch and Telegram-alert on change.
+
+    Forces a fresh check every cycle (bypassing get_sim_id's own 5-min cache)
+    so a rotation is caught within SIM_ID_POLL_SECONDS instead of up to 5 min
+    late. The first observation after startup only sets the baseline — it
+    doesn't fire an alert, since that's not a real change, just this worker
+    not having a prior value yet (avoids a spurious message on every restart).
+    """
+    from sim_uid import get_sim_id
+    from telegram_notify import send_telegram_message
+
+    while True:
+        try:
+            sim_id = await asyncio.to_thread(get_sim_id, True)
+            last = _sim_id_state["last"]
+            if sim_id and last is not None and sim_id != last:
+                message = (
+                    "🔄 <b>SN79 simulation updated</b>\n"
+                    f"<code>{last}</code> → <code>{sim_id}</code>"
+                )
+                ok = await asyncio.to_thread(
+                    send_telegram_message,
+                    SIM_ID_TELEGRAM_BOT_TOKEN,
+                    SIM_ID_TELEGRAM_CHAT_ID,
+                    message,
+                )
+                if ok:
+                    logger.info("Sim id changed %s -> %s, Telegram alert sent", last, sim_id)
+                else:
+                    logger.warning("Sim id changed %s -> %s, but Telegram alert failed to send", last, sim_id)
+            if sim_id:
+                _sim_id_state["last"] = sim_id
+        except Exception as exc:
+            logger.error("Sim id watch failed: %s", exc)
+        await asyncio.sleep(SIM_ID_POLL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     refresh_task = asyncio.create_task(_miner_status_refresh_worker())
     investing88_task = asyncio.create_task(_investing88_daily_sync_worker())
+    sim_id_task = asyncio.create_task(_sim_id_watch_worker())
+    keepalive_task = asyncio.create_task(_miner_master_keepalive_worker())
+    regbot_balance_task = asyncio.create_task(_regbot_balance_refresh_worker())
 
     async def _bootstrap_investing88_cache() -> None:
         try:
@@ -131,9 +198,15 @@ async def lifespan(app: FastAPI):
     yield
     refresh_task.cancel()
     investing88_task.cancel()
+    sim_id_task.cancel()
+    keepalive_task.cancel()
+    regbot_balance_task.cancel()
     with suppress(asyncio.CancelledError):
         await refresh_task
         await investing88_task
+        await sim_id_task
+        await keepalive_task
+        await regbot_balance_task
 
 
 app = FastAPI(title="SN71 Session Manager", lifespan=lifespan)
@@ -141,6 +214,83 @@ templates = Jinja2Templates(directory="templates")
 
 # Mount static files (for favicon and other assets)
 app.mount("/asset", StaticFiles(directory="asset"), name="asset")
+
+# Paths reachable without a valid session (login page + its POST, logout, static assets).
+_AUTH_PUBLIC_PATHS = {"/login", "/logout"}
+_AUTH_PUBLIC_PREFIXES = ("/asset/",)
+
+
+def _safe_next_path(next_path: str) -> str:
+    """Only allow same-site relative paths for post-login redirects (blocks open redirect)."""
+    if next_path and next_path.startswith("/") and not next_path.startswith("//"):
+        return next_path
+    return "/miners"
+
+
+_LOCALHOST_IPS = {"127.0.0.1", "::1"}
+
+
+@app.middleware("http")
+async def auth_gate(request: Request, call_next):
+    path = request.url.path
+    if path in _AUTH_PUBLIC_PATHS or path.startswith(_AUTH_PUBLIC_PREFIXES):
+        return await call_next(request)
+    # Port 12800 is exposed directly with no reverse proxy in front of it (verified: nothing
+    # in nginx's config proxies to it), so request.client.host is the real TCP peer, not a
+    # spoofable header - trusting it for loopback callers (curl/scripts on this same box) is safe.
+    if request.client and request.client.host in _LOCALHOST_IPS:
+        request.state.user = "localhost"
+        return await call_next(request)
+    username = auth.verify_session_cookie(request.cookies.get(auth.SESSION_COOKIE_NAME))
+    if not username:
+        if path.startswith("/api/"):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        next_qs = f"?next={quote(path + ('?' + request.url.query if request.url.query else ''))}"
+        return RedirectResponse(url=f"/login{next_qs}", status_code=303)
+    request.state.user = username
+    return await call_next(request)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, next: str = "/miners"):
+    next = _safe_next_path(next)
+    if auth.verify_session_cookie(request.cookies.get(auth.SESSION_COOKIE_NAME)):
+        return RedirectResponse(url=next, status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"next": next})
+
+
+@app.post("/login")
+async def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/miners"),
+):
+    next = _safe_next_path(next)
+    if not auth.authenticate(username, password):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "Invalid username or password.", "next": next},
+            status_code=401,
+        )
+    response = RedirectResponse(url=next, status_code=303)
+    response.set_cookie(
+        auth.SESSION_COOKIE_NAME,
+        auth.create_session_cookie(username),
+        max_age=auth.SESSION_SECONDS,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(auth.SESSION_COOKIE_NAME)
+    return response
+
 
 # Homepage: Miners page (default first load)
 @app.get("/", response_class=HTMLResponse)
@@ -269,9 +419,17 @@ AGENT_DEFAULTS_FILE = os.getenv(
 )
 MINER_PARAMS_REMOTE_DIR = os.getenv("MINER_PARAMS_REMOTE_DIR", "/root/79/sn-79")
 MINER_PARAMS_RSYNC_USER = os.getenv("MINER_PARAMS_RSYNC_USER", "root")
+# The miner boxes are geographically spread (RTT 0.4ms for local Hetzner, but 125-160ms for
+# the overseas ones). A params rsync is a ~4KB file, so its cost is NOT the transfer — it is
+# the ~10-13 network round-trips of a fresh SSH handshake + rsync protocol, which at 160ms RTT
+# is 2-3s. Connection multiplexing reuses one persistent SSH transport per box, so every sync
+# after the first skips the TCP/KEX/auth round-trips (measured 3.0s -> 1.3s on the far boxes);
+# GSSAPIAuthentication=no drops a pointless auth round-trip. ControlPersist keeps the master
+# warm between confirms in an editing session. Still fully synchronous — just fewer round-trips.
 MINER_PARAMS_RSYNC_SSH_OPTS = os.getenv(
     "MINER_PARAMS_RSYNC_SSH_OPTS",
-    "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15",
+    "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o GSSAPIAuthentication=no "
+    "-o ControlMaster=auto -o ControlPath=/tmp/.mp-cm-%C -o ControlPersist=600",
 )
 DISPLAY_PARAM_KEYS = [
     "max_quantity",
@@ -286,6 +444,9 @@ SERVER_NICKNAMES = {
     "144.91.111.126": "Server5",
     "65.109.65.81": "Server6",
     "84.32.34.89": "Server7",
+    "88.216.195.45": "Server8",
+    "65.109.104.253": "Server9",
+    "65.108.0.181": "Server10",
 }
 
 
@@ -389,12 +550,71 @@ def _save_miner_params_file(uid: int, data: dict) -> str:
 
 
 async def _rsync_miner_params(uid: int, local_path: str, miner_ip: str) -> tuple[bool, str]:
+    """Push the params file to the miner box over SSH (atomic streaming copy, not rsync).
+
+    For a single ~4KB file the transfer is nothing — the cost is network round-trips — and
+    rsync's delta protocol adds ~5 extra round-trips over the plain SSH channel (measured
+    ~1.2s vs ~0.5s per push on the 160ms-RTT boxes). So we stream the file straight to the
+    miner: `ssh <opts> host 'cat > tmp && mv -f tmp final'` with the local file on stdin. The
+    temp file is in the SAME directory as the target, so the closing `mv` is an atomic
+    same-filesystem rename — the miner never reads a half-written file. Content is byte-
+    identical to what rsync wrote (verified via sha256 on text + binary payloads); only the
+    file mtime differs, which the miner doesn't use. The SSH opts carry ControlMaster
+    multiplexing, so this reuses the warm master connection (see the keepalive worker).
+    """
     if not miner_ip:
         return False, "miner_ip is missing from params file"
-    remote = f"{MINER_PARAMS_RSYNC_USER}@{miner_ip}:{MINER_PARAMS_REMOTE_DIR}/run_miner_{uid}.json"
-    ssh_cmd = f"ssh {MINER_PARAMS_RSYNC_SSH_OPTS}"
-    cmd = ["rsync", "-avz", "-e", ssh_cmd, local_path, remote]
-    logger.info("Rsync miner params: %s", " ".join(shlex.quote(part) for part in cmd))
+    final = f"{MINER_PARAMS_REMOTE_DIR}/run_miner_{uid}.json"
+    # Unique temp name in the target's own directory: a concurrent or aborted push can't
+    # clobber another and never leaves the live file half-written.
+    tmp = f"{final}.{os.getpid()}.{uid}.tmp"
+    remote_cmd = f"cat > {shlex.quote(tmp)} && mv -f {shlex.quote(tmp)} {shlex.quote(final)}"
+    target = f"{MINER_PARAMS_RSYNC_USER}@{miner_ip}"
+    cmd = ["ssh", *shlex.split(MINER_PARAMS_RSYNC_SSH_OPTS), target, remote_cmd]
+    logger.info("Push miner params: ssh %s %s", target, remote_cmd)
+    try:
+        with open(local_path, "rb") as fh:
+            data = fh.read()
+    except OSError as exc:
+        return False, f"could not read local params file: {exc}"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(input=data), timeout=60.0)
+    except asyncio.TimeoutError:
+        with suppress(ProcessLookupError):
+            proc.kill()
+        return False, "ssh push timed out after 60 seconds"
+    except FileNotFoundError:
+        return False, "ssh command not found"
+
+    if proc.returncode != 0:
+        err = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
+        return False, err or f"ssh push failed with exit code {proc.returncode}"
+
+    return True, f"Synced to {final}"
+
+
+async def _ssh_pm2_restart(uid: int, miner_ip: str) -> tuple[bool, str]:
+    """Restart the miner's pm2 process (`79-miner-<uid>`) on its box over SSH.
+
+    Reuses the same warm ControlMaster connection as the params push (see the keepalive
+    worker), so this is a ~0.5s round trip on an already-open master. pm2 lives at a fixed
+    path in the box's default non-interactive PATH (/usr/local/bin/pm2), so no login shell
+    is needed. Best-effort: a returncode ≠ 0 (unknown process, box down) surfaces as an error.
+    """
+    if not miner_ip:
+        return False, "miner_ip is missing"
+    proc_name = f"79-miner-{uid}"
+    target = f"{MINER_PARAMS_RSYNC_USER}@{miner_ip}"
+    remote_cmd = f"pm2 restart {shlex.quote(proc_name)}"
+    cmd = ["ssh", *shlex.split(MINER_PARAMS_RSYNC_SSH_OPTS), target, remote_cmd]
+    logger.info("Restart miner pm2: ssh %s %s", target, remote_cmd)
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -403,16 +623,129 @@ async def _rsync_miner_params(uid: int, local_path: str, miner_ip: str) -> tuple
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
     except asyncio.TimeoutError:
-        return False, "rsync timed out after 60 seconds"
+        if proc is not None:
+            with suppress(ProcessLookupError):
+                proc.kill()
+        return False, "ssh restart timed out after 60 seconds"
     except FileNotFoundError:
-        return False, "rsync command not found"
+        return False, "ssh command not found"
 
     if proc.returncode != 0:
         err = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
-        return False, err or f"rsync failed with exit code {proc.returncode}"
+        return False, err or f"pm2 restart failed with exit code {proc.returncode}"
 
-    msg = stdout.decode("utf-8", errors="replace").strip()
-    return True, msg or f"Synced to {remote}"
+    return True, f"Restarted {proc_name} on {miner_ip}"
+
+
+async def _ssh_pm2_restart_many(uids: list[int], miner_ip: str) -> tuple[bool, str]:
+    """Restart every `79-miner-<uid>` on ONE box in a single `pm2 restart a b c …` call.
+
+    Restarting all of a box's processes in one pm2 invocation (rather than one ssh per uid)
+    reuses the warm master, avoids racing the pm2 daemon with concurrent CLI calls, and is
+    far faster for a fan-out. Grouping is done by the caller (uids here all live on miner_ip).
+    """
+    if not miner_ip:
+        return False, "miner_ip is missing"
+    if not uids:
+        return True, "no processes"
+    names = [f"79-miner-{u}" for u in uids]
+    target = f"{MINER_PARAMS_RSYNC_USER}@{miner_ip}"
+    remote_cmd = "pm2 restart " + " ".join(shlex.quote(n) for n in names)
+    cmd = ["ssh", *shlex.split(MINER_PARAMS_RSYNC_SSH_OPTS), target, remote_cmd]
+    logger.info("Restart miner pm2 (batch of %d): ssh %s", len(names), target)
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120.0)
+    except asyncio.TimeoutError:
+        if proc is not None:
+            with suppress(ProcessLookupError):
+                proc.kill()
+        return False, "ssh restart timed out after 120 seconds"
+    except FileNotFoundError:
+        return False, "ssh command not found"
+
+    if proc.returncode != 0:
+        err = stderr.decode("utf-8", errors="replace").strip() or stdout.decode("utf-8", errors="replace").strip()
+        return False, err or f"pm2 restart failed with exit code {proc.returncode}"
+
+    return True, f"Restarted {len(names)} process(es) on {miner_ip}"
+
+
+def _resolve_miner_ip(uid: int) -> str:
+    """The miner_ip recorded in the UID's params file, or '' when missing/unreadable."""
+    path = _miner_params_path(uid)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            stored = (json.load(f) or {}).get("miner_ip", "")
+    except (OSError, ValueError):
+        return ""
+    return stored.strip() if isinstance(stored, str) else ""
+
+
+def _miner_ips() -> set[str]:
+    """Distinct, non-empty miner IPs across every run_miner_*.json params file."""
+    ips: set[str] = set()
+    if not os.path.isdir(MINER_PARAMS_DIR):
+        return ips
+    for name in os.listdir(MINER_PARAMS_DIR):
+        if not (name.startswith("run_miner_") and name.endswith(".json")):
+            continue
+        try:
+            with open(os.path.join(MINER_PARAMS_DIR, name), "r", encoding="utf-8") as fh:
+                ip = (json.load(fh) or {}).get("miner_ip")
+        except (OSError, ValueError):
+            continue
+        if isinstance(ip, str) and ip.strip():
+            ips.add(ip.strip())
+    return ips
+
+
+async def _warm_one_master(ip: str) -> None:
+    """Open or refresh the persistent SSH master to one miner box (resets ControlPersist)."""
+    target = f"{MINER_PARAMS_RSYNC_USER}@{ip}"
+    cmd = ["ssh", *shlex.split(MINER_PARAMS_RSYNC_SSH_OPTS), target, "true"]
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=25.0)
+    except asyncio.TimeoutError:
+        if proc is not None:
+            with suppress(ProcessLookupError):
+                proc.kill()
+    except Exception:
+        pass
+
+
+async def _miner_master_keepalive_worker() -> None:
+    """Keep SSH master connections warm to every miner box so params pushes reuse them.
+
+    ControlPersist keeps a master alive only for a while after its last use; with no traffic
+    it expires, and then the next confirm pays the full ~2.5s cold SSH handshake again. This
+    worker refreshes every box's master a little more often than ControlPersist, so a confirm
+    to ANY miner (not just one edited moments ago) reuses a warm connection and finishes in
+    ~0.5s. Runs once at startup, then every MINER_PARAMS_KEEPALIVE_SECONDS. Best-effort: an
+    unreachable box just fails its refresh (and its confirms would fail anyway).
+    """
+    while True:
+        try:
+            ips = await asyncio.to_thread(_miner_ips)
+            if ips:
+                await asyncio.gather(*(_warm_one_master(ip) for ip in ips))
+                logger.info("Warmed SSH masters to %d miner box(es)", len(ips))
+        except Exception as exc:
+            logger.warning("Miner SSH master keepalive failed: %s", exc)
+        await asyncio.sleep(MINER_PARAMS_KEEPALIVE_SECONDS)
 
 
 def _display_param_keys_for_agent(agent_name: str) -> list[str]:
@@ -622,6 +955,84 @@ async def update_miner_params(uid: int, payload: dict = Body(...)):
         "agent_history_path": agent_history_path,
         "data": data,
     }
+
+
+@app.post("/api/miner-restart/{uid}")
+async def restart_miner(uid: int, payload: Optional[dict] = Body(default=None)):
+    """Restart the miner's pm2 process (`79-miner-<uid>`) on its box over SSH.
+
+    Resolves the target IP from an optional `{"ip": "..."}` body override, else the
+    `miner_ip` recorded in the UID's params file. This only bounces the process — it does
+    not touch params or history.
+    """
+    ip = ""
+    if isinstance(payload, dict):
+        raw = payload.get("ip") or payload.get("sync_ip")
+        if isinstance(raw, str):
+            ip = raw.strip()
+    if not ip:
+        ip = _resolve_miner_ip(uid)
+    if not ip:
+        raise HTTPException(status_code=400, detail=f"No miner IP known for UID {uid}")
+
+    ok, message = await _ssh_pm2_restart(uid, ip)
+    if not ok:
+        raise HTTPException(status_code=502, detail=message)
+    return {"ok": True, "uid": uid, "miner_ip": ip, "message": message}
+
+
+@app.post("/api/miner-restart-bulk")
+async def restart_miners_bulk(payload: dict = Body(...)):
+    """Restart the pm2 process for many miners at once (fan-out of the single restart).
+
+    Body: `{"uids": [10, 63, …]}`. Each UID's box IP is resolved from its params file; UIDs
+    sharing a box are restarted in ONE `pm2 restart a b c …` call per box (one warm-master
+    ssh each), all boxes in parallel. UIDs with no known IP are reported as failures.
+    """
+    raw = payload.get("uids") if isinstance(payload, dict) else None
+    if not isinstance(raw, list) or not raw:
+        raise HTTPException(status_code=400, detail="uids list required")
+    uids: list[int] = []
+    for u in raw:
+        try:
+            uids.append(int(u))
+        except (TypeError, ValueError):
+            continue
+    uids = sorted(set(uids))
+    if not uids:
+        raise HTTPException(status_code=400, detail="no valid uids")
+    if len(uids) > 500:
+        raise HTTPException(status_code=400, detail="too many uids (max 500)")
+
+    by_ip: dict[str, list[int]] = {}
+    no_ip: list[int] = []
+    for uid in uids:
+        ip = _resolve_miner_ip(uid)
+        if ip:
+            by_ip.setdefault(ip, []).append(uid)
+        else:
+            no_ip.append(uid)
+
+    ips = list(by_ip.keys())
+    outcomes = await asyncio.gather(*(_ssh_pm2_restart_many(by_ip[ip], ip) for ip in ips))
+
+    results: list[dict] = []
+    restarted = 0
+    for ip, (ok, message) in zip(ips, outcomes):
+        box_uids = by_ip[ip]
+        results.append({
+            "ip": ip,
+            "uids": box_uids,
+            "ok": ok,
+            "message": message if ok else None,
+            "error": None if ok else message,
+        })
+        if ok:
+            restarted += len(box_uids)
+    for uid in no_ip:
+        results.append({"ip": None, "uids": [uid], "ok": False, "message": None, "error": "no miner IP"})
+
+    return {"ok": True, "count": len(uids), "restarted": restarted, "results": results}
 
 
 @app.put("/api/agent-bulk")
@@ -1149,6 +1560,21 @@ async def get_reg_cost(request: Request):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@app.get("/api/sim-id")
+async def get_sim_id_endpoint():
+    """Currently-live TAOS simulation epoch for subnet 79 (get_sim_id has its
+    own 5-min cache, so this is cheap to poll on every dashboard refresh)."""
+    import asyncio
+    from sim_uid import get_sim_id
+
+    try:
+        sim_id = await asyncio.to_thread(get_sim_id)
+        return {"sim_id": sim_id}
+    except Exception as e:
+        logger.error("Sim id fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @app.get("/api/investing88/miner/{uid}")
 async def get_investing88_miner(uid: int, request: Request):
     import asyncio
@@ -1297,6 +1723,7 @@ class RegBotRunRequest(BaseModel):
     dispatch_agent: str
     reglimit: float
     max_count: int
+    dispatch_agent_id: Optional[int] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1308,12 +1735,57 @@ class RegBotKillRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class UnstakeTransferRequest(BaseModel):
+    server: str
+    mode: str = "unstake_transfer"  # "unstake" or "unstake_transfer"
+    destination: Optional[str] = None  # required when mode == "unstake_transfer"
+    netuid: int = 79
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UnstakeBatchItem(BaseModel):
+    server: str
+    mode: str = "unstake_transfer"
+    destination: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UnstakeBatchStartRequest(BaseModel):
+    items: list[UnstakeBatchItem]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BatchServerConfig(BaseModel):
+    server: str
+    count: int
+    reglimit: float
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BatchStartRequest(BaseModel):
+    servers: list[BatchServerConfig]
+    dispatch_agent: str
+    dispatch_agent_id: Optional[int] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 @app.get("/api/regbot/presets")
 async def regbot_presets():
-    from regbot import get_server_presets, get_dispatch_agent_options
+    from regbot import get_server_presets, get_dispatch_agent_options, load_balance_cache
+
+    servers = get_server_presets()
+    balances = (load_balance_cache() or {}).get("balances", {})
+    for s in servers:
+        bal = balances.get(s["name"])
+        s["balance_tao"] = bal["tao"] if bal else None
 
     return {
-        "servers": get_server_presets(),
+        "servers": servers,
         "dispatch_agents": get_dispatch_agent_options(),
     }
 
@@ -1324,7 +1796,11 @@ async def regbot_run(payload: RegBotRunRequest):
 
     try:
         return await trigger_run(
-            payload.server, payload.dispatch_agent, payload.reglimit, payload.max_count
+            payload.server,
+            payload.dispatch_agent,
+            payload.reglimit,
+            payload.max_count,
+            dispatch_agent_id=payload.dispatch_agent_id,
         )
     except RegBotError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1370,25 +1846,38 @@ async def regbot_kill(payload: RegBotKillRequest):
 
 @app.get("/api/regbot/balance")
 async def regbot_balance(server: str, refresh: bool = False):
-    import time
-    from regbot import get_server_balance, RegBotError
+    from regbot import get_server_balance, load_balance_cache, RegBotError
 
-    now = time.time()
-    cached = _regbot_balance_cache.get(server)
-    if not refresh and cached and now < cached.get("expires_at", 0):
-        return cached["payload"]
+    if not refresh:
+        cache = load_balance_cache()
+        cached = (cache or {}).get("balances", {}).get(server)
+        if cached:
+            return cached
+        # No file cache yet (e.g. right after a fresh deploy, before the
+        # background worker's first pass completes) — fall through to a
+        # live fetch so the UI isn't stuck empty.
 
     try:
-        payload = await get_server_balance(server)
-        _regbot_balance_cache[server] = {
-            "payload": payload,
-            "expires_at": now + REGBOT_BALANCE_CACHE_SECONDS,
-        }
-        return payload
+        return await get_server_balance(server)
     except RegBotError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("RegBot balance fetch failed for server=%s: %s", server, e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/regbot/balance/refresh")
+async def regbot_balance_refresh():
+    """Force-refresh every server's balance/stake cache immediately, instead
+    of waiting for the next REGBOT_BALANCE_CACHE_SECONDS background cycle —
+    used on page load/refresh so the Add Miner / Unstake / Multi-Server
+    Register modals always show current numbers."""
+    from regbot import refresh_balance_cache
+
+    try:
+        return await refresh_balance_cache()
+    except Exception as e:
+        logger.error("RegBot balance refresh failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
 
 
@@ -1408,6 +1897,155 @@ async def regbot_active():
     except Exception as e:
         logger.error("RegBot active-run scan failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/regbot/batch/start")
+async def regbot_batch_start(payload: BatchStartRequest):
+    from regbot import start_batch, RegBotError
+
+    try:
+        server_configs = [
+            {"server": s.server, "count": s.count, "reglimit": s.reglimit}
+            for s in payload.servers
+        ]
+        return await start_batch(
+            server_configs,
+            payload.dispatch_agent,
+            dispatch_agent_id=payload.dispatch_agent_id,
+        )
+    except RegBotError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Batch start failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/regbot/batch/active")
+async def regbot_batch_active():
+    from regbot import get_active_batch
+
+    return {"batch": get_active_batch()}
+
+
+@app.get("/api/regbot/batch/{batch_id}")
+async def regbot_batch_status(batch_id: str):
+    from regbot import get_batch_status, RegBotError
+
+    try:
+        return get_batch_status(batch_id)
+    except RegBotError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/regbot/batch/{batch_id}/cancel")
+async def regbot_batch_cancel(batch_id: str):
+    from regbot import cancel_batch, RegBotError
+
+    try:
+        return await cancel_batch(batch_id)
+    except RegBotError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/unstake/presets")
+async def unstake_presets():
+    from regbot import load_balance_cache
+    from unstake import get_unstake_server_presets
+
+    servers = get_unstake_server_presets()
+    balances = (load_balance_cache() or {}).get("balances", {})
+    for s in servers:
+        bal = balances.get(s["name"])
+        s["balance_tao"] = bal["tao"] if bal else None
+        s["staked_tao"] = bal.get("staked_tao") if bal else None
+    return {"servers": servers}
+
+
+@app.post("/api/unstake/preview")
+async def unstake_preview(payload: UnstakeTransferRequest):
+    from unstake import preview_unstake, UnstakeError
+
+    try:
+        return await preview_unstake(payload.server, payload.mode, payload.destination, payload.netuid)
+    except UnstakeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Unstake preview failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/unstake/run")
+async def unstake_run(payload: UnstakeTransferRequest):
+    from unstake import start_unstake_run, UnstakeError
+
+    try:
+        return await start_unstake_run(payload.server, payload.mode, payload.destination, payload.netuid)
+    except UnstakeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Unstake run failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/unstake/log")
+async def unstake_log(run_id: str):
+    from unstake import get_unstake_run_status, UnstakeError
+
+    try:
+        return get_unstake_run_status(run_id)
+    except UnstakeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Unstake log fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/unstake/active")
+async def unstake_active():
+    from unstake import get_active_unstake_runs_view
+
+    return {"active": get_active_unstake_runs_view()}
+
+
+@app.post("/api/unstake/batch/start")
+async def unstake_batch_start(payload: UnstakeBatchStartRequest):
+    from unstake import start_unstake_batch, UnstakeError
+
+    try:
+        items = [item.model_dump() for item in payload.items]
+        return await start_unstake_batch(items)
+    except UnstakeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Unstake batch start failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/unstake/batch/active")
+async def unstake_batch_active():
+    from unstake import get_active_unstake_batch
+
+    return {"batch": get_active_unstake_batch()}
+
+
+@app.get("/api/unstake/batch/{batch_id}")
+async def unstake_batch_status(batch_id: str):
+    from unstake import get_unstake_batch_status, UnstakeError
+
+    try:
+        return get_unstake_batch_status(batch_id)
+    except UnstakeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Unstake batch status fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/unstake/history")
+async def unstake_history(limit: int = 50):
+    from unstake import list_recent_runs
+
+    return {"runs": list_recent_runs(limit)}
 
 
 if __name__ == "__main__":

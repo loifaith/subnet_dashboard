@@ -141,6 +141,50 @@ def get_balance_for_address(
             pass
 
 
+def get_balance_and_stake_for_address(
+    address: str,
+    netuid: int,
+    endpoint: str = DEFAULT_ENDPOINT,
+) -> Optional[dict]:
+    """Free TAO balance plus total staked value for a coldkey on one netuid
+    (summed across every hotkey) — one connection for both, so callers that
+    need both don't pay for two separate connect/close cycles.
+
+    Stake is held in the subnet's alpha token, not TAO — alpha floats
+    against TAO via the subnet's dynamic pool rather than being 1:1, so the
+    raw alpha amount (`staked_alpha`) is converted to its actual TAO value
+    (`staked_tao`) using the live exchange rate from get_subnet_price."""
+    sub = connect_subtensor(endpoint, try_limit=3, verbose=False)
+    if sub is None:
+        return None
+    try:
+        balance = sub.get_balance(address)
+        rao = int(balance)
+        staked_rao = sum(
+            int(stakeinfo.stake)
+            for stakeinfo in sub.get_stake_info_for_coldkey(address)
+            if stakeinfo.netuid == netuid
+        )
+        staked_alpha = float(staked_rao) / pow(10, 9)
+        alpha_price_tao = float(int(sub.get_subnet_price(netuid))) / pow(10, 9)
+        return {
+            "address": address,
+            "rao": rao,
+            "tao": float(rao) / pow(10, 9),
+            "staked_rao": staked_rao,
+            "staked_alpha": staked_alpha,
+            "alpha_price_tao": alpha_price_tao,
+            "staked_tao": staked_alpha * alpha_price_tao,
+        }
+    except Exception:
+        return None
+    finally:
+        try:
+            sub.close()
+        except Exception:
+            pass
+
+
 def get_registration_price_from_subtensor(
     sub: bt.Subtensor,
     netuid: int,

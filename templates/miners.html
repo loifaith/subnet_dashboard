@@ -553,7 +553,7 @@
         padding: 4px 10px;
         border-radius: 999px;
         background: #fff;
-        border: 1px solid #dc3545;
+        border: 1px solid #198754;
         font-size: 0.78rem;
         cursor: pointer;
         color: #333;
@@ -563,21 +563,21 @@
         text-overflow: ellipsis;
       }
       .regbot-run-pill:hover {
-        background: #f8d7da;
+        background: #d1e7dd;
       }
       html.theme-dark .regbot-run-pill {
         background: #111827;
-        border-color: #991b1b;
+        border-color: #14532d;
         color: #e5e7eb;
       }
       html.theme-dark .regbot-run-pill:hover {
-        background: #2a1315;
+        background: #132a1e;
       }
       .regbot-pulse-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #dc3545;
+        background: #198754;
         flex-shrink: 0;
         animation: regbot-pulse 1.5s ease-in-out infinite;
       }
@@ -593,6 +593,50 @@
       .regbot-unreachable-note {
         font-size: 0.75rem;
         color: #dc3545;
+      }
+      .unstake-active-bar {
+        padding: 8px 24px;
+        border-bottom: 1px solid #dee2e6;
+        background: #fdf1f2;
+      }
+      html.theme-dark .unstake-active-bar {
+        background: #2a1618;
+        border-bottom-color: #374151;
+      }
+      .unstake-run-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #fff;
+        border: 1px solid #dc3545;
+        font-size: 0.78rem;
+        cursor: pointer;
+        color: #333;
+        max-width: 480px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .unstake-run-pill:hover {
+        background: #f8d7da;
+      }
+      html.theme-dark .unstake-run-pill {
+        background: #111827;
+        border-color: #7f1d1d;
+        color: #e5e7eb;
+      }
+      html.theme-dark .unstake-run-pill:hover {
+        background: #2a1618;
+      }
+      .unstake-pulse-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #dc3545;
+        flex-shrink: 0;
+        animation: regbot-pulse 1.5s ease-in-out infinite;
       }
       .miners-table {
         width: 100%;
@@ -1227,6 +1271,21 @@
       html.theme-dark .params-form-wrap {
         border-color: #334155;
       }
+      #multiUnstakeServerRows tr {
+        cursor: pointer;
+      }
+      #multiUnstakeServerRows tr:hover {
+        background: #f1f5f9;
+      }
+      html.theme-dark #multiUnstakeServerRows tr:hover {
+        background: #1e293b;
+      }
+      #multiUnstakeServerRows tr.selected {
+        background: #dbeafe;
+      }
+      html.theme-dark #multiUnstakeServerRows tr.selected {
+        background: #1e3a5f;
+      }
       .params-status {
         margin-top: 12px;
         font-size: 0.85rem;
@@ -1697,6 +1756,15 @@
             >
             <span class="subnet-reg-cost-value" id="subnetRegCostValue">—</span>
           </div>
+          <div
+            id="subnetSimId"
+            class="subnet-reg-cost"
+            style="display: none"
+            title=""
+          >
+            <span class="subnet-reg-cost-label">Sim</span>
+            <span class="subnet-reg-cost-value" id="subnetSimIdValue">—</span>
+          </div>
         </div>
         <div style="display: flex; align-items: center; gap: 10px">
           <div class="theme-toggle">
@@ -1707,6 +1775,13 @@
               <i class="bi bi-moon"></i> Dark
             </button>
           </div>
+          <a
+            href="/logout"
+            class="btn btn-outline-secondary btn-sm"
+            title="Log out"
+          >
+            <i class="bi bi-box-arrow-right"></i> Logout
+          </a>
           <button
             type="button"
             class="btn btn-outline-primary btn-sm"
@@ -1723,10 +1798,41 @@
           >
             <i class="bi bi-plus-circle"></i> Add Miner
           </button>
+          <button
+            type="button"
+            class="btn btn-outline-danger btn-sm"
+            onclick="openUnstakeModal()"
+            id="unstakeBtn"
+          >
+            <i class="bi bi-arrow-down-circle"></i> Unstake &amp; Transfer
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-success btn-sm"
+            onclick="openMultiRegisterModal()"
+            id="multiRegisterBtn"
+          >
+            <i class="bi bi-list-ol"></i> Multi-Server Register
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline-danger btn-sm"
+            onclick="openMultiUnstakeModal()"
+            id="multiUnstakeBtn"
+          >
+            <i class="bi bi-list-ol"></i> Multi-Server Unstake
+          </button>
         </div>
       </div>
       <div id="regbotActiveBar" class="regbot-active-bar" style="display: none">
         <div class="regbot-active-bar-inner" id="regbotActiveBarInner"></div>
+      </div>
+      <div
+        id="unstakeActiveBar"
+        class="unstake-active-bar"
+        style="display: none"
+      >
+        <div class="regbot-active-bar-inner" id="unstakeActiveBarInner"></div>
       </div>
       <div class="content-area">
         <div class="stats-row">
@@ -2632,6 +2738,625 @@
     </div>
 
     <div
+      class="modal fade"
+      id="unstakeModal"
+      tabindex="-1"
+      aria-labelledby="unstakeModalTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="unstakeModalTitle">
+              <i class="bi bi-arrow-down-circle text-danger"></i> Unstake &amp;
+              Transfer
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div id="unstakeFormSection">
+              <div class="mb-3">
+                <label class="form-label" for="unstakeServer"
+                  >Server (coldkey)</label
+                >
+                <select
+                  class="form-select"
+                  id="unstakeServer"
+                  onchange="onUnstakeInputsChanged()"
+                ></select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="unstakeMode">Action</label>
+                <select
+                  class="form-select"
+                  id="unstakeMode"
+                  onchange="onUnstakeModeChanged()"
+                >
+                  <option value="unstake_transfer">
+                    Unstake &amp; Transfer — sweep to another address
+                  </option>
+                  <option value="unstake">
+                    Unstake only — leave TAO as free balance on this coldkey
+                  </option>
+                </select>
+              </div>
+              <div class="mb-3" id="unstakeDestinationWrap">
+                <label class="form-label" for="unstakeDestination"
+                  >Destination SS58 address</label
+                >
+                <input
+                  type="text"
+                  class="form-control"
+                  id="unstakeDestination"
+                  placeholder="5..."
+                  oninput="onUnstakeInputsChanged()"
+                />
+                <div class="regbot-hint" id="unstakeModeHint">
+                  Unstakes every hotkey's stake above the dust threshold on
+                  netuid 79 for this coldkey, then sweeps the resulting free
+                  balance to this address. Real, irreversible TAO movement — use
+                  Preview to see what would happen first.
+                </div>
+              </div>
+              <div
+                id="unstakeFormError"
+                class="alert alert-danger py-2 px-3"
+                style="display: none; font-size: 0.85rem"
+              ></div>
+              <div class="mb-2">
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm"
+                  onclick="previewUnstake()"
+                  id="unstakePreviewBtn"
+                >
+                  <i class="bi bi-eye"></i> Preview (Dry Run)
+                </button>
+              </div>
+              <div id="unstakePreviewWrap" style="display: none">
+                <div class="regbot-hint mb-1">
+                  Dry-run output — nothing has been submitted yet:
+                </div>
+                <pre
+                  id="unstakePreviewOutput"
+                  style="
+                    max-height: 280px;
+                    overflow-y: auto;
+                    background: #0f172a;
+                    color: #e2e8f0;
+                    padding: 10px;
+                    border-radius: 6px;
+                    font-size: 0.78rem;
+                    white-space: pre-wrap;
+                  "
+                ></pre>
+              </div>
+            </div>
+            <div id="unstakeResultSection" style="display: none">
+              <div class="mb-2">
+                <span id="unstakeResultBadge" class="badge bg-secondary"
+                  >Starting…</span
+                >
+                <span
+                  id="unstakeResultSummary"
+                  style="font-size: 0.85rem; margin-left: 8px"
+                ></span>
+              </div>
+              <div
+                id="unstakeProgressWrap"
+                class="progress mb-2"
+                style="height: 8px; display: none"
+              >
+                <div
+                  id="unstakeProgressBar"
+                  class="progress-bar progress-bar-striped progress-bar-animated bg-danger"
+                  style="width: 100%"
+                ></div>
+              </div>
+              <pre
+                id="unstakeResultOutput"
+                style="
+                  max-height: 320px;
+                  overflow-y: auto;
+                  background: #0f172a;
+                  color: #e2e8f0;
+                  padding: 10px;
+                  border-radius: 6px;
+                  font-size: 0.78rem;
+                  white-space: pre-wrap;
+                "
+              ></pre>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              id="unstakeRunBtn"
+              onclick="submitUnstake()"
+              disabled
+            >
+              <i class="bi bi-arrow-down-circle"></i> Confirm &amp; Run
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="unstakeConfirmModal"
+      tabindex="-1"
+      aria-labelledby="unstakeConfirmModalTitle"
+      aria-hidden="true"
+      data-bs-backdrop="static"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="unstakeConfirmModalTitle">
+              <i class="bi bi-exclamation-triangle text-danger"></i> Confirm
+              Unstake &amp; Transfer
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div id="unstakeConfirmDetails" style="font-size: 0.9rem"></div>
+            <div
+              class="alert alert-danger py-2 px-3 mt-3 mb-0"
+              style="font-size: 0.82rem"
+            >
+              <i class="bi bi-exclamation-triangle"></i> This is a real,
+              on-chain unstake (and, if Unstake &amp; Transfer is selected, a
+              transfer to the destination above). It cannot be undone or
+              recalled.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              onclick="confirmUnstakeRun()"
+            >
+              <i class="bi bi-arrow-down-circle"></i> Confirm &amp; Run
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="multiRegisterModal"
+      tabindex="-1"
+      aria-labelledby="multiRegisterModalTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="multiRegisterModalTitle">
+              <i class="bi bi-list-ol"></i> Multi-Server Register
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div id="multiRegisterFormSection">
+              <div class="regbot-hint mb-3">
+                Registers hotkeys across several servers in strict round-robin
+                order — one attempt at a time (e.g. 3 on Server1, 2 on Server2
+                becomes Server1, Server2, Server1, Server2, Server1), not all at
+                once. Each server waits its turn, so a step can sit for a while
+                if that server's Reg Limit hasn't cleared yet.
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="multiRegisterDispatchAgent"
+                  >Dispatch Agent</label
+                >
+                <select
+                  class="form-select"
+                  id="multiRegisterDispatchAgent"
+                ></select>
+              </div>
+              <div class="mb-2" style="font-weight: 600">
+                How many hotkeys on each server, and at what Reg Limit?
+              </div>
+              <div class="params-form-wrap mb-3">
+                <table class="params-form-table" id="multiRegisterServerTable">
+                  <thead>
+                    <tr>
+                      <th>Server</th>
+                      <th>Balance</th>
+                      <th style="width: 110px">Count</th>
+                      <th style="width: 140px">Reg Limit (τ)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="multiRegisterServerRows"></tbody>
+                </table>
+              </div>
+              <div id="multiRegisterEstimate" class="regbot-hint mb-2"></div>
+              <div
+                id="multiRegisterFormError"
+                class="alert alert-danger py-2 px-3"
+                style="display: none; font-size: 0.85rem"
+              ></div>
+            </div>
+            <div id="multiRegisterProgressSection" style="display: none">
+              <div class="mb-2">
+                <span id="multiRegisterStatusBadge" class="badge bg-secondary"
+                  >RUNNING</span
+                >
+                <span
+                  id="multiRegisterProgressSummary"
+                  style="font-size: 0.85rem; margin-left: 8px"
+                ></span>
+              </div>
+              <div class="params-form-wrap">
+                <table class="params-form-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px">#</th>
+                      <th>Server</th>
+                      <th style="width: 90px">Reg Limit</th>
+                      <th>Status</th>
+                      <th>Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody id="multiRegisterQueueRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-outline-danger btn-sm"
+              id="multiRegisterCancelBtn"
+              onclick="cancelMultiRegisterBatch()"
+              style="display: none"
+            >
+              <i class="bi bi-stop-circle"></i> Cancel Batch
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              class="btn btn-success"
+              id="multiRegisterStartBtn"
+              onclick="submitMultiRegisterBatch()"
+            >
+              <i class="bi bi-list-ol"></i> Start Batch
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="multiRegisterConfirmModal"
+      tabindex="-1"
+      aria-labelledby="multiRegisterConfirmModalTitle"
+      aria-hidden="true"
+      data-bs-backdrop="static"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="multiRegisterConfirmModalTitle">
+              <i class="bi bi-exclamation-triangle text-warning"></i> Confirm
+              Multi-Server Batch
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div
+              id="multiRegisterConfirmDetails"
+              style="font-size: 0.9rem"
+            ></div>
+            <div
+              class="alert alert-warning py-2 px-3 mt-3 mb-0"
+              style="font-size: 0.82rem"
+            >
+              <i class="bi bi-exclamation-triangle"></i> This is a real,
+              multi-step on-chain batch and cannot be undone once each
+              registration lands. It runs one server at a time and can take a
+              long while — you can cancel it partway through.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-success"
+              onclick="confirmMultiRegisterStart()"
+            >
+              <i class="bi bi-list-ol"></i> Confirm &amp; Start
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="multiRegisterCancelConfirmModal"
+      tabindex="-1"
+      aria-labelledby="multiRegisterCancelConfirmModalTitle"
+      aria-hidden="true"
+      data-bs-backdrop="static"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="multiRegisterCancelConfirmModalTitle">
+              <i class="bi bi-stop-circle text-danger"></i> Cancel Registration
+              Batch
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div
+              class="alert alert-danger py-2 px-3 mb-0"
+              style="font-size: 0.82rem"
+            >
+              <i class="bi bi-exclamation-triangle"></i> The current in-flight
+              attempt is killed immediately. Any hotkey already registered
+              earlier in this batch stays registered — this only stops what
+              hasn't happened yet. This cannot be undone.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Keep Running
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              onclick="confirmMultiRegisterCancel()"
+            >
+              <i class="bi bi-stop-circle"></i> Confirm &amp; Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="multiUnstakeModal"
+      tabindex="-1"
+      aria-labelledby="multiUnstakeModalTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="multiUnstakeModalTitle">
+              <i class="bi bi-list-ol"></i> Multi-Server Unstake
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div id="multiUnstakeFormSection">
+              <div class="regbot-hint mb-3">
+                Unstakes (and, if Unstake &amp; Transfer is selected, transfers)
+                multiple coldkeys at the same time — unlike Multi-Server
+                Register, these run fully in parallel, since each coldkey is
+                independent and there's no shared price limit to coordinate.
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="multiUnstakeMode">Action</label>
+                <select
+                  class="form-select"
+                  id="multiUnstakeMode"
+                  onchange="onMultiUnstakeModeChanged()"
+                >
+                  <option value="unstake_transfer">
+                    Unstake &amp; Transfer — sweep each coldkey to its own
+                    destination
+                  </option>
+                  <option value="unstake">
+                    Unstake only — leave TAO as free balance on each coldkey
+                  </option>
+                </select>
+              </div>
+              <div class="mb-2" style="font-weight: 600">
+                Which servers/coldkeys should this include, and where should
+                each one's TAO go?
+                <span style="font-weight: 400; color: #6c757d"
+                  >(click a row to select/deselect it)</span
+                >
+              </div>
+              <div class="params-form-wrap mb-3">
+                <table class="params-form-table" id="multiUnstakeServerTable">
+                  <thead>
+                    <tr>
+                      <th>Server</th>
+                      <th>Free Balance</th>
+                      <th>Staked</th>
+                      <th
+                        id="multiUnstakeDestinationHeader"
+                        style="width: 260px"
+                      >
+                        Destination
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody id="multiUnstakeServerRows"></tbody>
+                </table>
+              </div>
+              <div id="multiUnstakeEstimate" class="regbot-hint mb-2"></div>
+              <div
+                id="multiUnstakeFormError"
+                class="alert alert-danger py-2 px-3"
+                style="display: none; font-size: 0.85rem"
+              ></div>
+            </div>
+            <div id="multiUnstakeProgressSection" style="display: none">
+              <div class="mb-2">
+                <span id="multiUnstakeStatusBadge" class="badge bg-secondary"
+                  >RUNNING</span
+                >
+                <span
+                  id="multiUnstakeProgressSummary"
+                  style="font-size: 0.85rem; margin-left: 8px"
+                ></span>
+              </div>
+              <div class="params-form-wrap">
+                <table class="params-form-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px">#</th>
+                      <th>Server</th>
+                      <th>Mode</th>
+                      <th>Status</th>
+                      <th>Last line</th>
+                    </tr>
+                  </thead>
+                  <tbody id="multiUnstakeQueueRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              id="multiUnstakeStartBtn"
+              onclick="submitMultiUnstakeBatch()"
+            >
+              <i class="bi bi-list-ol"></i> Start Batch
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="modal fade"
+      id="multiUnstakeConfirmModal"
+      tabindex="-1"
+      aria-labelledby="multiUnstakeConfirmModalTitle"
+      aria-hidden="true"
+      data-bs-backdrop="static"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="multiUnstakeConfirmModalTitle">
+              <i class="bi bi-exclamation-triangle text-warning"></i> Confirm
+              Multi-Server Unstake
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div
+              id="multiUnstakeConfirmDetails"
+              style="font-size: 0.9rem"
+            ></div>
+            <div
+              class="alert alert-warning py-2 px-3 mt-3 mb-0"
+              style="font-size: 0.82rem"
+            >
+              <i class="bi bi-exclamation-triangle"></i> These are real,
+              on-chain unstakes (and transfers, if selected) submitted to every
+              server above at the same time. It cannot be undone or recalled
+              once each one lands.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              onclick="confirmMultiUnstakeStart()"
+            >
+              <i class="bi bi-arrow-down-circle"></i> Confirm &amp; Run
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
       id="notifyToastContainer"
       class="notify-toast-container"
       aria-live="polite"
@@ -2641,6 +3366,21 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
+      // Session expired mid-use -> the auth middleware answers /api/* with 401.
+      // Bounce to the login page instead of leaving fetch() calls silently failing.
+      (function () {
+        var originalFetch = window.fetch;
+        window.fetch = function () {
+          return originalFetch.apply(this, arguments).then(function (response) {
+            if (response.status === 401) {
+              window.location.href =
+                "/login?next=" + encodeURIComponent(window.location.pathname);
+            }
+            return response;
+          });
+        };
+      })();
+
       // Data from backend: Bittensor Metagraph (netuid 88, finney)
       // Structure: incentives[hotkey]=decimal, hotkeyToUid[hotkey]=uid, hotkeyToColdkey[hotkey]=coldkey
       let minersArray = [];
@@ -2755,15 +3495,22 @@
         "144.91.111.126": "Server5",
         "65.109.65.81": "Server6",
         "84.32.34.89": "Server7",
+        "88.216.195.45": "Server8",
+        "65.109.104.253": "Server9",
+        "65.108.0.181": "Server10",
       };
       var COLDKEY_NICKNAMES = {
         "5HdegbzgYQ26ZfsqBLx7o54uwFQzLRPwkBe2S6JM2aNVpCj5": "b005",
         "5EAHcQJ61VRi28m2wNpQAUpXXuPr4EaqFpDPbqBqAoEBd77q": "b006",
         "5FHBj9FW8pysyZEUS8wj3fNUz1AsL6jUf8e9ZaR7ZZeSWrNz": "b007",
+        "5H9EEaLUHwpYJ49MYbZjPVvrVv6439N9HXhvSBSfrZMSYzZ2": "w004",
         "5CQ2zbACHJGtmu5JqDodY4PkrqfUP5oXgXgX6Ks79gGjvkJy": "w003",
+        "5DLysBUFyR8v75vef54DATeVBy9sMEx5JdeLvikXvbGYvx6N": "w002",
+        "5HjZiymx6XonNczu9vgtkbcuBbPeTKZ1Pso6jQrw7D1DcfC2": "w001",
         "5GREyxixYB8EJVHV1A9fQDh734tghXtt41A2MQG7VebqfQNe": "b001",
         "5DD45SAecKmhpyn9TykNoZWnc7mFgBrhvwmYNC6XSN2Ron6R": "b002",
         "5Fnwngtt7bm5Nm8zTrXeELgG88M1cDBkJzaewdDghkLfgnXW": "b003",
+        "5G96Vc7YqepyNNZi6dWqzpzQJtQxcZFdysC7Cp15ZgrTfhXf": "w005",
       };
       function getColdkeyNickname(ck) {
         return ck && COLDKEY_NICKNAMES[ck] ? COLDKEY_NICKNAMES[ck] : null;
@@ -2848,6 +3595,8 @@
         setInterval(loadData, 5 * 60 * 1000);
         loadRegBotActiveRuns();
         regbotActiveTimer = setInterval(loadRegBotActiveRuns, 20000);
+        loadUnstakeActiveRuns();
+        unstakeActiveTimer = setInterval(loadUnstakeActiveRuns, 20000);
         var currentNetuid = getSubnetFromInput();
         [71, 79, 88].forEach(function (n) {
           if (n !== currentNetuid) fetchSubnetEmissionBackground(n);
@@ -2950,8 +3699,12 @@
       var NEW_COLDKEYS = [
         "5HdegbzgYQ26ZfsqBLx7o54uwFQzLRPwkBe2S6JM2aNVpCj5",
         "5EAHcQJ61VRi28m2wNpQAUpXXuPr4EaqFpDPbqBqAoEBd77q",
+        "5H9EEaLUHwpYJ49MYbZjPVvrVv6439N9HXhvSBSfrZMSYzZ2",
         "5FHBj9FW8pysyZEUS8wj3fNUz1AsL6jUf8e9ZaR7ZZeSWrNz",
         "5CQ2zbACHJGtmu5JqDodY4PkrqfUP5oXgXgX6Ks79gGjvkJy",
+        "5DLysBUFyR8v75vef54DATeVBy9sMEx5JdeLvikXvbGYvx6N",
+        "5G96Vc7YqepyNNZi6dWqzpzQJtQxcZFdysC7Cp15ZgrTfhXf",
+        "5HjZiymx6XonNczu9vgtkbcuBbPeTKZ1Pso6jQrw7D1DcfC2",
       ];
       function isNewColdkeyMiner(m) {
         return m.coldkey && NEW_COLDKEYS.indexOf(m.coldkey) >= 0;
@@ -3320,14 +4073,18 @@
             var tail = Promise.resolve();
             if (getSubnetFromInput() === 79) {
               loadFeeRegimePanel(forceRefresh);
+              loadSimId();
+              if (forceRefresh) loadRegBotBalances();
               tail = loadMinerAgentInfo().then(loadUidMetrics);
             } else if (getSubnetFromInput() === 88) {
               hideFeeRegimePanel();
+              hideSimId();
               minerAgentInfo = {};
               uidMetrics = {};
               tail = loadInvesting88Days(forceRefresh);
             } else {
               hideFeeRegimePanel();
+              hideSimId();
               minerAgentInfo = {};
               uidMetrics = {};
               investing88DaysMap = {};
@@ -4719,13 +5476,19 @@
         return formatCompactNumber(value, 4);
       }
 
+      function simIdMetaHtml(data) {
+        return data.sim_id ? " · sim " + escapeHtml(data.sim_id) : "";
+      }
+
       function renderUidStatusBody(data) {
         var bodyEl = document.getElementById("uidStatusBody");
         if (!data.active) {
           bodyEl.innerHTML =
             '<div class="uid-status-empty">No TAOS metrics reported for UID ' +
             data.uid +
-            " (inactive or never scored).</div>";
+            " (inactive or never scored)" +
+            simIdMetaHtml(data) +
+            ".</div>";
           return;
         }
         var summaryRows = (data.summary || [])
@@ -4745,7 +5508,9 @@
           })
           .join("");
         var html =
-          '<div class="uid-status-meta">TAOS metrics for subnet 79 · cached up to 60s</div>' +
+          '<div class="uid-status-meta">TAOS metrics for subnet 79 · cached up to 60s' +
+          simIdMetaHtml(data) +
+          "</div>" +
           '<div class="uid-status-section">' +
           "<h6>Summary</h6>" +
           '<div class="params-form-wrap"><table class="params-form-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>' +
@@ -6261,6 +7026,8 @@
         var showSn88Columns = netuid === 88;
         if (!showSn79Columns) hideFeeRegimePanel();
         if (typeof loadRegBotActiveRuns === "function") loadRegBotActiveRuns();
+        if (typeof loadUnstakeActiveRuns === "function")
+          loadUnstakeActiveRuns();
         var sn79Headers = [
           "serverColumnHeader",
           "regDateColumnHeader",
@@ -6518,6 +7285,52 @@
             if (getSubnetFromInput() === netuid)
               renderSubnetRegCost(null, netuid);
           });
+      }
+
+      function renderSimId(data) {
+        var wrap = document.getElementById("subnetSimId");
+        var valueEl = document.getElementById("subnetSimIdValue");
+        if (!wrap || !valueEl) return;
+        wrap.style.display = "";
+        if (data && data.sim_id) {
+          valueEl.textContent = data.sim_id;
+          wrap.title = "Live TAOS simulation epoch for subnet 79";
+        } else {
+          valueEl.textContent = "—";
+          wrap.title = "Could not determine current simulation";
+        }
+      }
+
+      function hideSimId() {
+        var wrap = document.getElementById("subnetSimId");
+        if (wrap) wrap.style.display = "none";
+      }
+
+      function loadSimId() {
+        return fetch("/api/sim-id")
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(function (data) {
+            renderSimId(data);
+          })
+          .catch(function (err) {
+            console.warn("Failed to load sim id:", err);
+            renderSimId(null);
+          });
+      }
+
+      function loadRegBotBalances() {
+        // Fire-and-forget: refreshes the server-side balance/stake cache
+        // file so it's current by the time Add Miner / Unstake / Multi-
+        // Server Register are opened, without blocking the rest of the page
+        // load on 8 servers' worth of chain queries.
+        fetch("/api/regbot/balance/refresh", { method: "POST" }).catch(
+          function (err) {
+            console.warn("Failed to refresh RegBot balances:", err);
+          },
+        );
       }
 
       function renderRegDateCell(uid) {
@@ -7066,6 +7879,10 @@
         var serverSel = document.getElementById("addMinerServer");
         serverSel.innerHTML = data.servers
           .map(function (s) {
+            var balText =
+              s.balance_tao != null
+                ? " — " + formatRegCostTao(s.balance_tao)
+                : "";
             return (
               '<option value="' +
               s.name +
@@ -7073,21 +7890,23 @@
               s.name +
               " (" +
               s.wallet +
-              ")</option>"
+              ")" +
+              balText +
+              "</option>"
             );
           })
           .join("");
 
         var agentSel = document.getElementById("addMinerDispatchAgent");
         agentSel.innerHTML = data.dispatch_agents
-          .map(function (a) {
+          .map(function (a, i) {
             return (
               '<option value="' +
-              a +
+              i +
               '"' +
-              (a === "WarriorAgent" ? " selected" : "") +
+              (a.name === "WarriorAgent" ? " selected" : "") +
               ">" +
-              a +
+              escapeHtml(a.label) +
               "</option>"
             );
           })
@@ -7251,9 +8070,12 @@
 
       function submitAddMiner() {
         var server = document.getElementById("addMinerServer").value;
-        var dispatchAgent = document.getElementById(
-          "addMinerDispatchAgent",
-        ).value;
+        var agentSel = document.getElementById("addMinerDispatchAgent");
+        var agentIndex = agentSel.value;
+        var agentEntry =
+          agentIndex !== "" && regbotPresetsCache
+            ? regbotPresetsCache.dispatch_agents[parseInt(agentIndex, 10)]
+            : null;
         var reglimit = parseFloat(
           document.getElementById("addMinerReglimit").value,
         );
@@ -7264,7 +8086,7 @@
         var errEl = document.getElementById("addMinerFormError");
         errEl.style.display = "none";
 
-        if (!server || !dispatchAgent || isNaN(reglimit) || isNaN(maxCount)) {
+        if (!server || !agentEntry || isNaN(reglimit) || isNaN(maxCount)) {
           errEl.style.display = "";
           errEl.textContent = "Please fill in all fields.";
           return;
@@ -7274,7 +8096,9 @@
         var serverLabel = serverSel.options[serverSel.selectedIndex].text;
         addMinerPendingParams = {
           server: server,
-          dispatchAgent: dispatchAgent,
+          dispatchAgent: agentEntry.name,
+          dispatchAgentId: agentEntry.agent_id,
+          dispatchAgentLabel: agentEntry.label,
           reglimit: reglimit,
           maxCount: maxCount,
           serverLabel: serverLabel,
@@ -7285,7 +8109,7 @@
           serverLabel +
           "</div>" +
           "<div><strong>Dispatch Agent:</strong> " +
-          dispatchAgent +
+          escapeHtml(agentEntry.label) +
           "</div>" +
           "<div><strong>Reg Limit:</strong> τ " +
           reglimit +
@@ -7328,6 +8152,7 @@
         if (!addMinerPendingParams) return;
         var server = addMinerPendingParams.server;
         var dispatchAgent = addMinerPendingParams.dispatchAgent;
+        var dispatchAgentId = addMinerPendingParams.dispatchAgentId;
         var reglimit = addMinerPendingParams.reglimit;
         var maxCount = addMinerPendingParams.maxCount;
         addMinerPendingParams = null;
@@ -7360,6 +8185,7 @@
           body: JSON.stringify({
             server: server,
             dispatch_agent: dispatchAgent,
+            dispatch_agent_id: dispatchAgentId,
             reglimit: reglimit,
             max_count: maxCount,
           }),
@@ -7383,6 +8209,9 @@
               data.wallet +
               ") · agent " +
               data.dispatch_agent +
+              (data.dispatch_agent_id != null
+                ? " (id " + data.dispatch_agent_id + ")"
+                : "") +
               " · reglimit τ" +
               data.reglimit +
               " · max_count " +
@@ -7587,6 +8416,1212 @@
           });
       }
 
+      // ---- Unstake & Transfer ----
+      var unstakePresetsCache = null;
+      var unstakePendingRun = null; // { server, destination }
+      var unstakeLogTimer = null;
+      var unstakeCurrentRun = null; // { run_id, startedAt }
+      var unstakeLastKnownStatus = null; // "RUNNING" | "FINISHED"
+
+      function loadUnstakePresets() {
+        if (unstakePresetsCache) return Promise.resolve(unstakePresetsCache);
+        return fetch("/api/unstake/presets")
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(function (data) {
+            unstakePresetsCache = data;
+            return data;
+          });
+      }
+
+      function populateUnstakeForm(data) {
+        var sel = document.getElementById("unstakeServer");
+        sel.innerHTML = data.servers
+          .map(function (s) {
+            var balText =
+              s.balance_tao != null
+                ? " — " + formatRegCostTao(s.balance_tao) + " free"
+                : "";
+            var stakedText =
+              s.staked_tao != null
+                ? " / " + formatRegCostTao(s.staked_tao) + " staked"
+                : "";
+            return (
+              '<option value="' +
+              s.name +
+              '">' +
+              s.name +
+              " (" +
+              s.wallet +
+              ")" +
+              balText +
+              stakedText +
+              "</option>"
+            );
+          })
+          .join("");
+        updateUnstakeRunEnabled();
+      }
+
+      function resetUnstakeModal() {
+        document.getElementById("unstakeFormSection").style.display = "";
+        document.getElementById("unstakeResultSection").style.display = "none";
+        document.getElementById("unstakeFormError").style.display = "none";
+        document.getElementById("unstakePreviewWrap").style.display = "none";
+        document.getElementById("unstakePreviewOutput").textContent = "";
+        document.getElementById("unstakeMode").value = "unstake_transfer";
+        document.getElementById("unstakeDestination").value = "";
+        document.getElementById("unstakeRunBtn").style.display = "";
+        document.getElementById("unstakeProgressWrap").style.display = "none";
+        document.getElementById("unstakeResultSummary").textContent = "";
+        unstakePendingRun = null;
+        unstakeCurrentRun = null;
+        unstakeLastKnownStatus = null;
+        if (unstakeLogTimer) {
+          clearInterval(unstakeLogTimer);
+          unstakeLogTimer = null;
+        }
+        applyUnstakeModeVisibility();
+        updateUnstakeRunEnabled();
+      }
+
+      function openUnstakeModal() {
+        resetUnstakeModal();
+        loadUnstakePresets()
+          .then(populateUnstakeForm)
+          .catch(function (err) {
+            var errEl = document.getElementById("unstakeFormError");
+            errEl.style.display = "";
+            errEl.textContent = "Failed to load servers: " + err.message;
+          });
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("unstakeModal"),
+        ).show();
+      }
+
+      function applyUnstakeModeVisibility() {
+        var mode = document.getElementById("unstakeMode").value;
+        var isTransfer = mode === "unstake_transfer";
+        document.getElementById("unstakeDestinationWrap").style.display =
+          isTransfer ? "" : "none";
+        document.getElementById("unstakeModeHint").textContent = isTransfer
+          ? "Unstakes every hotkey's stake above the dust threshold on " +
+            "netuid 79 for this coldkey, then sweeps the resulting free " +
+            "balance to this address. Real, irreversible TAO movement — " +
+            "use Preview to see what would happen first."
+          : "Unstakes every hotkey's stake above the dust threshold on " +
+            "netuid 79 for this coldkey. The freed TAO stays as free " +
+            "balance on this same coldkey — nothing is sent anywhere. " +
+            "Real, irreversible on-chain action — use Preview to see what " +
+            "would happen first.";
+      }
+
+      function onUnstakeModeChanged() {
+        applyUnstakeModeVisibility();
+        onUnstakeInputsChanged();
+      }
+
+      function updateUnstakeRunEnabled() {
+        // Run is enabled as soon as the form is complete for the selected
+        // mode — a server, and (for unstake_transfer) a destination. Preview
+        // is optional, not a gate: use it to sanity-check first if you want,
+        // but it's not required before Run.
+        var server = document.getElementById("unstakeServer").value;
+        var mode = document.getElementById("unstakeMode").value;
+        var destination = document
+          .getElementById("unstakeDestination")
+          .value.trim();
+        var ready = !!server && (mode === "unstake" || !!destination);
+        document.getElementById("unstakeRunBtn").disabled = !ready;
+      }
+
+      function onUnstakeInputsChanged() {
+        updateUnstakeRunEnabled();
+      }
+
+      function previewUnstake() {
+        var server = document.getElementById("unstakeServer").value;
+        var mode = document.getElementById("unstakeMode").value;
+        var destination = document
+          .getElementById("unstakeDestination")
+          .value.trim();
+        var errEl = document.getElementById("unstakeFormError");
+        errEl.style.display = "none";
+
+        if (!server || (mode === "unstake_transfer" && !destination)) {
+          errEl.style.display = "";
+          errEl.textContent =
+            mode === "unstake_transfer"
+              ? "Please select a server and enter a destination address."
+              : "Please select a server.";
+          return;
+        }
+
+        var btn = document.getElementById("unstakePreviewBtn");
+        btn.disabled = true;
+        btn.innerHTML =
+          '<span class="spinner-border spinner-border-sm" role="status" ' +
+          'aria-hidden="true"></span> Previewing…';
+
+        fetch("/api/unstake/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            server: server,
+            mode: mode,
+            destination: mode === "unstake_transfer" ? destination : null,
+          }),
+        })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.detail || "HTTP " + r.status);
+              return data;
+            });
+          })
+          .then(function (data) {
+            document.getElementById("unstakePreviewWrap").style.display = "";
+            document.getElementById("unstakePreviewOutput").textContent =
+              data.output;
+          })
+          .catch(function (err) {
+            errEl.style.display = "";
+            errEl.textContent = "Preview failed: " + err.message;
+          })
+          .finally(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-eye"></i> Preview (Dry Run)';
+          });
+      }
+
+      function submitUnstake() {
+        var server = document.getElementById("unstakeServer").value;
+        var mode = document.getElementById("unstakeMode").value;
+        var destination = document
+          .getElementById("unstakeDestination")
+          .value.trim();
+
+        var serverSel = document.getElementById("unstakeServer");
+        var serverLabel = serverSel.options[serverSel.selectedIndex].text;
+        var isTransfer = mode === "unstake_transfer";
+        unstakePendingRun = {
+          server: server,
+          mode: mode,
+          destination: isTransfer ? destination : null,
+        };
+
+        document.getElementById("unstakeConfirmDetails").innerHTML =
+          "<div><strong>Server:</strong> " +
+          escapeHtml(serverLabel) +
+          "</div>" +
+          "<div><strong>Action:</strong> " +
+          (isTransfer ? "Unstake &amp; Transfer" : "Unstake only") +
+          "</div>" +
+          (isTransfer
+            ? "<div><strong>Destination:</strong> " +
+              escapeHtml(destination) +
+              "</div>"
+            : "");
+
+        // Same single-modal-at-a-time discipline as the RegBot confirm flows.
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("unstakeModal"),
+        ).hide();
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("unstakeConfirmModal"),
+        ).show();
+      }
+
+      document
+        .getElementById("unstakeConfirmModal")
+        .addEventListener("hidden.bs.modal", function () {
+          bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("unstakeModal"),
+          ).show();
+        });
+
+      function confirmUnstakeRun() {
+        if (!unstakePendingRun) return;
+        var run = unstakePendingRun;
+        unstakePendingRun = null;
+
+        var confirmModalEl = document.getElementById("unstakeConfirmModal");
+        var confirmModal = bootstrap.Modal.getInstance(confirmModalEl);
+        if (confirmModal) confirmModal.hide();
+
+        // Switch to the result view synchronously, same reasoning as
+        // confirmAddMinerSubmit() — the reopened modal shouldn't show a
+        // stale, still-editable form while the request is in flight.
+        document.getElementById("unstakeFormSection").style.display = "none";
+        document.getElementById("unstakeResultSection").style.display = "";
+        document.getElementById("unstakeResultBadge").textContent = "Starting…";
+        document.getElementById("unstakeResultBadge").className =
+          "badge bg-secondary";
+        document.getElementById("unstakeResultSummary").textContent = "";
+        document.getElementById("unstakeProgressWrap").style.display = "none";
+        document.getElementById("unstakeResultOutput").textContent = "";
+        document.getElementById("unstakeRunBtn").style.display = "none";
+
+        fetch("/api/unstake/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            server: run.server,
+            mode: run.mode,
+            destination: run.destination,
+          }),
+        })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.detail || "HTTP " + r.status);
+              return data;
+            });
+          })
+          .then(function (data) {
+            unstakeCurrentRun = { run_id: data.run_id, startedAt: Date.now() };
+            unstakeLastKnownStatus = "RUNNING";
+            refreshUnstakeLog();
+            unstakeLogTimer = setInterval(refreshUnstakeLog, 4000);
+            loadUnstakeActiveRuns(); // show its pill immediately, not after up to 20s
+          })
+          .catch(function (err) {
+            var badge = document.getElementById("unstakeResultBadge");
+            badge.textContent = "ERROR";
+            badge.className = "badge bg-danger";
+            document.getElementById("unstakeResultOutput").textContent =
+              err.message;
+            showNotifyAlert("Unstake failed", err.message, "error", 10000);
+          });
+      }
+
+      function formatElapsed(ms) {
+        var secs = Math.round(ms / 1000);
+        return secs >= 60
+          ? Math.floor(secs / 60) + "m " + (secs % 60) + "s"
+          : secs + "s";
+      }
+
+      function refreshUnstakeLog() {
+        if (!unstakeCurrentRun) return;
+        fetch(
+          "/api/unstake/log?run_id=" +
+            encodeURIComponent(unstakeCurrentRun.run_id),
+        )
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.detail || "HTTP " + r.status);
+              return data;
+            });
+          })
+          .then(function (data) {
+            var badge = document.getElementById("unstakeResultBadge");
+            var progressWrap = document.getElementById("unstakeProgressWrap");
+            var summaryEl = document.getElementById("unstakeResultSummary");
+            var elapsedText = formatElapsed(
+              Date.now() - unstakeCurrentRun.startedAt,
+            );
+
+            if (data.status === "RUNNING") {
+              badge.textContent = "RUNNING";
+              badge.className = "badge bg-primary";
+              progressWrap.style.display = "";
+              summaryEl.textContent =
+                "Elapsed: " +
+                elapsedText +
+                " — hotkeys are unstaked one at a time on-chain, this can take a while.";
+            } else {
+              progressWrap.style.display = "none";
+              var label = data.timed_out
+                ? "TIMEOUT"
+                : data.success
+                  ? "SUCCESS"
+                  : "FAILED";
+              badge.textContent = label;
+              badge.className =
+                "badge " + (data.success ? "bg-success" : "bg-danger");
+              summaryEl.textContent = "Finished after " + elapsedText;
+            }
+            document.getElementById("unstakeResultOutput").textContent =
+              data.output || "(no output yet)";
+
+            if (
+              data.status !== "RUNNING" &&
+              unstakeLastKnownStatus === "RUNNING"
+            ) {
+              var actionLabel =
+                data.mode === "unstake_transfer"
+                  ? "Unstake & transfer"
+                  : "Unstake";
+              showNotifyAlert(
+                actionLabel +
+                  (data.success
+                    ? " complete"
+                    : data.timed_out
+                      ? " timed out"
+                      : " failed"),
+                data.mode === "unstake_transfer"
+                  ? data.server + " → " + data.destination
+                  : data.server,
+                data.success ? "success" : "error",
+                10000,
+              );
+            }
+            unstakeLastKnownStatus = data.status;
+
+            if (data.status !== "RUNNING" && unstakeLogTimer) {
+              clearInterval(unstakeLogTimer);
+              unstakeLogTimer = null;
+              loadUnstakeActiveRuns(); // this run just finished — drop its pill promptly
+            }
+          })
+          .catch(function (err) {
+            document.getElementById("unstakeResultOutput").textContent +=
+              "\n[log fetch error: " + err.message + "]";
+          });
+      }
+
+      // ---- Multi-Server Register (strict round-robin batch) ----
+      var multiRegisterPollTimer = null;
+      var multiRegisterActiveBatchId = null;
+      var multiRegisterPendingStart = null; // { server_configs, dispatch_agent, dispatch_agent_id }
+
+      var MULTI_REGISTER_STATUS_ICON = {
+        PENDING: '<i class="bi bi-circle text-muted"></i>',
+        RUNNING: '<i class="bi bi-arrow-repeat text-primary"></i>',
+        DONE: '<i class="bi bi-check-circle-fill text-success"></i>',
+        CANCELLED: '<i class="bi bi-x-circle text-danger"></i>',
+        LAUNCH_FAILED:
+          '<i class="bi bi-exclamation-triangle-fill text-danger"></i>',
+      };
+
+      function resetMultiRegisterModal() {
+        document.getElementById("multiRegisterFormSection").style.display = "";
+        document.getElementById("multiRegisterProgressSection").style.display =
+          "none";
+        document.getElementById("multiRegisterFormError").style.display =
+          "none";
+        document.getElementById("multiRegisterEstimate").textContent = "";
+        document.getElementById("multiRegisterStartBtn").style.display = "";
+        document.getElementById("multiRegisterCancelBtn").style.display =
+          "none";
+        multiRegisterPendingStart = null;
+        multiRegisterActiveBatchId = null;
+        if (multiRegisterPollTimer) {
+          clearInterval(multiRegisterPollTimer);
+          multiRegisterPollTimer = null;
+        }
+      }
+
+      function openMultiRegisterModal() {
+        resetMultiRegisterModal();
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiRegisterModal"),
+        ).show();
+        loadRegBotPresets()
+          .then(populateMultiRegisterForm)
+          .catch(function (err) {
+            var errEl = document.getElementById("multiRegisterFormError");
+            errEl.style.display = "";
+            errEl.textContent = "Failed to load servers: " + err.message;
+          });
+        // Resume showing progress if a batch was already running (e.g. the
+        // modal was closed and reopened, or the page was reloaded) — the
+        // batch itself is a server-side background task, independent of
+        // whether this modal happens to be open.
+        fetch("/api/regbot/batch/active")
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (data) {
+            if (data.batch && data.batch.status !== "DONE") {
+              showMultiRegisterProgress(data.batch);
+            }
+          })
+          .catch(function () {});
+      }
+
+      function populateMultiRegisterForm(data) {
+        var agentSel = document.getElementById("multiRegisterDispatchAgent");
+        agentSel.innerHTML = data.dispatch_agents
+          .map(function (a, i) {
+            return (
+              '<option value="' +
+              i +
+              '"' +
+              (a.name === "WarriorAgent" ? " selected" : "") +
+              ">" +
+              escapeHtml(a.label) +
+              "</option>"
+            );
+          })
+          .join("");
+
+        var rows = document.getElementById("multiRegisterServerRows");
+        rows.innerHTML = data.servers
+          .map(function (s) {
+            var balText =
+              s.balance_tao != null ? formatRegCostTao(s.balance_tao) : "—";
+            return (
+              "<tr>" +
+              "<td>" +
+              escapeHtml(s.name) +
+              " (" +
+              escapeHtml(s.wallet) +
+              ")</td>" +
+              "<td>" +
+              balText +
+              "</td>" +
+              "<td>" +
+              '<input type="number" ' +
+              'class="form-control form-control-sm multi-register-count-input" ' +
+              'min="0" step="1" value="0" data-server="' +
+              escapeHtml(s.name) +
+              '" oninput="updateMultiRegisterEstimate()" />' +
+              "</td>" +
+              "<td>" +
+              '<input type="number" ' +
+              'class="form-control form-control-sm multi-register-reglimit-input" ' +
+              'min="0.0001" step="0.0001" placeholder="0.1051" data-server="' +
+              escapeHtml(s.name) +
+              '" oninput="updateMultiRegisterEstimate()" />' +
+              "</td>" +
+              "</tr>"
+            );
+          })
+          .join("");
+        updateMultiRegisterEstimate();
+      }
+
+      function multiRegisterServerConfigs() {
+        var countInputs = document.querySelectorAll(
+          ".multi-register-count-input",
+        );
+        var reglimitByServer = {};
+        document
+          .querySelectorAll(".multi-register-reglimit-input")
+          .forEach(function (el) {
+            reglimitByServer[el.dataset.server] = parseFloat(el.value);
+          });
+        var configs = [];
+        countInputs.forEach(function (el) {
+          var n = parseInt(el.value, 10);
+          if (!isNaN(n) && n > 0) {
+            configs.push({
+              server: el.dataset.server,
+              count: n,
+              reglimit: reglimitByServer[el.dataset.server],
+            });
+          }
+        });
+        return configs;
+      }
+
+      function updateMultiRegisterEstimate() {
+        var configs = multiRegisterServerConfigs();
+        var totalAttempts = configs.reduce(function (sum, c) {
+          return sum + c.count;
+        }, 0);
+        var el = document.getElementById("multiRegisterEstimate");
+        if (totalAttempts === 0) {
+          el.textContent = "";
+          return;
+        }
+        var maxSpend = configs.reduce(function (sum, c) {
+          return sum + (isNaN(c.reglimit) ? 0 : c.reglimit * c.count);
+        }, 0);
+        var text =
+          totalAttempts +
+          " hotkey(s) total across " +
+          configs.length +
+          " server(s) · max spend τ " +
+          maxSpend.toFixed(4);
+        el.textContent = text;
+      }
+
+      function submitMultiRegisterBatch() {
+        var errEl = document.getElementById("multiRegisterFormError");
+        errEl.style.display = "none";
+
+        var agentSel = document.getElementById("multiRegisterDispatchAgent");
+        var agentIndex = agentSel.value;
+        var agentEntry =
+          agentIndex !== "" && regbotPresetsCache
+            ? regbotPresetsCache.dispatch_agents[parseInt(agentIndex, 10)]
+            : null;
+        var serverConfigs = multiRegisterServerConfigs();
+
+        if (!agentEntry) {
+          errEl.style.display = "";
+          errEl.textContent = "Please select a dispatch agent.";
+          return;
+        }
+        if (serverConfigs.length === 0) {
+          errEl.style.display = "";
+          errEl.textContent =
+            "Enter a count greater than 0 for at least one server.";
+          return;
+        }
+        var missingReglimit = serverConfigs.filter(function (c) {
+          return isNaN(c.reglimit);
+        });
+        if (missingReglimit.length > 0) {
+          errEl.style.display = "";
+          errEl.textContent =
+            "Enter a reg limit for: " +
+            missingReglimit
+              .map(function (c) {
+                return c.server;
+              })
+              .join(", ");
+          return;
+        }
+
+        var totalAttempts = serverConfigs.reduce(function (sum, c) {
+          return sum + c.count;
+        }, 0);
+        var totalMaxSpend = serverConfigs.reduce(function (sum, c) {
+          return sum + c.reglimit * c.count;
+        }, 0);
+        multiRegisterPendingStart = {
+          server_configs: serverConfigs,
+          dispatch_agent: agentEntry.name,
+          dispatch_agent_id: agentEntry.agent_id,
+        };
+
+        document.getElementById("multiRegisterConfirmDetails").innerHTML =
+          "<div><strong>Dispatch Agent:</strong> " +
+          escapeHtml(agentEntry.label) +
+          "</div>" +
+          "<div><strong>Servers:</strong> " +
+          serverConfigs
+            .map(function (c) {
+              return (
+                escapeHtml(c.server) + " ×" + c.count + " @ τ" + c.reglimit
+              );
+            })
+            .join(", ") +
+          "</div>" +
+          "<div class='mt-2'><strong>Total: " +
+          totalAttempts +
+          " hotkey(s) · max spend τ " +
+          totalMaxSpend.toFixed(4) +
+          "</strong></div>";
+
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiRegisterModal"),
+        ).hide();
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiRegisterConfirmModal"),
+        ).show();
+      }
+
+      document
+        .getElementById("multiRegisterConfirmModal")
+        .addEventListener("hidden.bs.modal", function () {
+          bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("multiRegisterModal"),
+          ).show();
+        });
+
+      document
+        .getElementById("multiRegisterModal")
+        .addEventListener("hidden.bs.modal", function () {
+          // The batch is a server-side background task independent of this
+          // modal — closing it just stops polling from the client side,
+          // it does NOT cancel the batch. Reopening the modal resumes
+          // showing progress (see openMultiRegisterModal).
+          if (multiRegisterPollTimer) {
+            clearInterval(multiRegisterPollTimer);
+            multiRegisterPollTimer = null;
+          }
+        });
+
+      function confirmMultiRegisterStart() {
+        if (!multiRegisterPendingStart) return;
+        var params = multiRegisterPendingStart;
+        multiRegisterPendingStart = null;
+
+        var confirmModalEl = document.getElementById(
+          "multiRegisterConfirmModal",
+        );
+        var confirmModal = bootstrap.Modal.getInstance(confirmModalEl);
+        if (confirmModal) confirmModal.hide();
+
+        document.getElementById("multiRegisterFormSection").style.display =
+          "none";
+        document.getElementById("multiRegisterProgressSection").style.display =
+          "";
+        document.getElementById("multiRegisterStartBtn").style.display = "none";
+        document.getElementById("multiRegisterStatusBadge").textContent =
+          "Starting…";
+        document.getElementById("multiRegisterStatusBadge").className =
+          "badge bg-secondary";
+        document.getElementById("multiRegisterQueueRows").innerHTML = "";
+
+        fetch("/api/regbot/batch/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            servers: params.server_configs,
+            dispatch_agent: params.dispatch_agent,
+            dispatch_agent_id: params.dispatch_agent_id,
+          }),
+        })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.detail || "HTTP " + r.status);
+              return data;
+            });
+          })
+          .then(function (batch) {
+            showMultiRegisterProgress(batch);
+          })
+          .catch(function (err) {
+            document.getElementById("multiRegisterFormSection").style.display =
+              "";
+            document.getElementById(
+              "multiRegisterProgressSection",
+            ).style.display = "none";
+            document.getElementById("multiRegisterStartBtn").style.display = "";
+            var errEl = document.getElementById("multiRegisterFormError");
+            errEl.style.display = "";
+            errEl.textContent = "Failed to start batch: " + err.message;
+          });
+      }
+
+      function showMultiRegisterProgress(batch) {
+        document.getElementById("multiRegisterFormSection").style.display =
+          "none";
+        document.getElementById("multiRegisterProgressSection").style.display =
+          "";
+        document.getElementById("multiRegisterStartBtn").style.display = "none";
+        multiRegisterActiveBatchId = batch.batch_id;
+        renderMultiRegisterProgress(batch);
+        if (multiRegisterPollTimer) clearInterval(multiRegisterPollTimer);
+        multiRegisterPollTimer = setInterval(function () {
+          pollMultiRegisterBatch(batch.batch_id);
+        }, 5000);
+      }
+
+      function pollMultiRegisterBatch(batchId) {
+        fetch("/api/regbot/batch/" + encodeURIComponent(batchId))
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(function (batch) {
+            renderMultiRegisterProgress(batch);
+            if (batch.status === "DONE" || batch.status === "CANCELLED") {
+              clearInterval(multiRegisterPollTimer);
+              multiRegisterPollTimer = null;
+              loadRegBotActiveRuns(); // the batch's last step may have just finished — refresh the active bar
+            }
+          })
+          .catch(function (err) {
+            console.warn("Batch poll failed:", err);
+          });
+      }
+
+      function renderMultiRegisterProgress(batch) {
+        var badge = document.getElementById("multiRegisterStatusBadge");
+        badge.textContent = batch.status;
+        badge.className =
+          "badge " +
+          (batch.status === "RUNNING"
+            ? "bg-primary"
+            : batch.status === "DONE"
+              ? "bg-success"
+              : batch.status === "CANCELLING"
+                ? "bg-warning"
+                : "bg-secondary");
+
+        var doneCount = batch.queue.filter(function (i) {
+          return i.status === "DONE";
+        }).length;
+        document.getElementById("multiRegisterProgressSummary").textContent =
+          doneCount + " / " + batch.queue.length + " complete";
+
+        document.getElementById("multiRegisterCancelBtn").style.display =
+          batch.status === "RUNNING" ? "" : "none";
+
+        var rows = document.getElementById("multiRegisterQueueRows");
+        rows.innerHTML = batch.queue
+          .map(function (item, idx) {
+            var detail = "";
+            if (item.status === "DONE") {
+              detail =
+                item.synced_uids && item.synced_uids.length
+                  ? "UID " + item.synced_uids.join(", ")
+                  : "no new UID";
+            } else if (item.status === "RUNNING") {
+              detail = escapeHtml(item.last_line || "starting…");
+            } else if (item.status === "LAUNCH_FAILED") {
+              detail = escapeHtml(item.error || "launch failed");
+            } else if (item.status === "CANCELLED") {
+              detail = "cancelled";
+            }
+            return (
+              "<tr>" +
+              "<td>" +
+              (idx + 1) +
+              "</td>" +
+              "<td>" +
+              escapeHtml(item.server) +
+              " #" +
+              item.seq +
+              "</td>" +
+              "<td>τ" +
+              item.reglimit +
+              "</td>" +
+              "<td>" +
+              (MULTI_REGISTER_STATUS_ICON[item.status] || "") +
+              " " +
+              item.status +
+              "</td>" +
+              "<td style='font-size: 0.78rem'>" +
+              detail +
+              "</td>" +
+              "</tr>"
+            );
+          })
+          .join("");
+      }
+
+      function cancelMultiRegisterBatch() {
+        if (!multiRegisterActiveBatchId) return;
+        // Same single-modal-at-a-time discipline as the RegBot/Unstake
+        // confirm flows — hide this modal first, the cancel-confirm modal's
+        // "hidden" handler reopens it either way (Keep Running or Confirm).
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiRegisterModal"),
+        ).hide();
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiRegisterCancelConfirmModal"),
+        ).show();
+      }
+
+      document
+        .getElementById("multiRegisterCancelConfirmModal")
+        .addEventListener("hidden.bs.modal", function () {
+          bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("multiRegisterModal"),
+          ).show();
+        });
+
+      function confirmMultiRegisterCancel() {
+        if (!multiRegisterActiveBatchId) return;
+        var batchId = multiRegisterActiveBatchId;
+
+        var confirmModalEl = document.getElementById(
+          "multiRegisterCancelConfirmModal",
+        );
+        var confirmModal = bootstrap.Modal.getInstance(confirmModalEl);
+        if (confirmModal) confirmModal.hide();
+
+        var btn = document.getElementById("multiRegisterCancelBtn");
+        btn.disabled = true;
+        fetch("/api/regbot/batch/" + encodeURIComponent(batchId) + "/cancel", {
+          method: "POST",
+        })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.detail || "HTTP " + r.status);
+              return data;
+            });
+          })
+          .then(function (batch) {
+            renderMultiRegisterProgress(batch);
+          })
+          .catch(function (err) {
+            showNotifyAlert(
+              "Failed to cancel batch",
+              err.message,
+              "error",
+              8000,
+            );
+          })
+          .finally(function () {
+            btn.disabled = false;
+          });
+      }
+
+      // ---- Multi-Server Unstake (parallel — see start_unstake_batch() for why) ----
+      var multiUnstakePollTimer = null;
+      var multiUnstakeActiveBatchId = null;
+      var multiUnstakePendingStart = null; // { items }
+
+      var MULTI_UNSTAKE_STATUS_ICON = {
+        PENDING: '<i class="bi bi-circle text-muted"></i>',
+        RUNNING: '<i class="bi bi-arrow-repeat text-primary"></i>',
+        DONE: '<i class="bi bi-check-circle-fill text-success"></i>',
+        LAUNCH_FAILED:
+          '<i class="bi bi-exclamation-triangle-fill text-danger"></i>',
+      };
+
+      function resetMultiUnstakeModal() {
+        document.getElementById("multiUnstakeFormSection").style.display = "";
+        document.getElementById("multiUnstakeProgressSection").style.display =
+          "none";
+        document.getElementById("multiUnstakeFormError").style.display = "none";
+        document.getElementById("multiUnstakeEstimate").textContent = "";
+        document.getElementById("multiUnstakeStartBtn").style.display = "";
+        document.getElementById("multiUnstakeMode").value = "unstake_transfer";
+        multiUnstakePendingStart = null;
+        multiUnstakeActiveBatchId = null;
+        if (multiUnstakePollTimer) {
+          clearInterval(multiUnstakePollTimer);
+          multiUnstakePollTimer = null;
+        }
+        onMultiUnstakeModeChanged();
+      }
+
+      function openMultiUnstakeModal() {
+        resetMultiUnstakeModal();
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiUnstakeModal"),
+        ).show();
+        loadUnstakePresets()
+          .then(populateMultiUnstakeForm)
+          .catch(function (err) {
+            var errEl = document.getElementById("multiUnstakeFormError");
+            errEl.style.display = "";
+            errEl.textContent = "Failed to load servers: " + err.message;
+          });
+        // Resume showing progress if a batch was already running — same
+        // reasoning as openMultiRegisterModal().
+        fetch("/api/unstake/batch/active")
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (data) {
+            if (data.batch && data.batch.status !== "DONE") {
+              showMultiUnstakeProgress(data.batch);
+            }
+          })
+          .catch(function () {});
+      }
+
+      function populateMultiUnstakeForm(data) {
+        var rows = document.getElementById("multiUnstakeServerRows");
+        rows.innerHTML = data.servers
+          .map(function (s) {
+            var balText =
+              s.balance_tao != null ? formatRegCostTao(s.balance_tao) : "—";
+            var stakedText =
+              s.staked_tao != null ? formatRegCostTao(s.staked_tao) : "—";
+            return (
+              '<tr data-server="' +
+              escapeHtml(s.name) +
+              '" onclick="toggleMultiUnstakeRow(this)">' +
+              "<td>" +
+              escapeHtml(s.name) +
+              " (" +
+              escapeHtml(s.wallet) +
+              ")</td>" +
+              "<td>" +
+              balText +
+              "</td>" +
+              "<td>" +
+              stakedText +
+              "</td>" +
+              "<td>" +
+              '<input type="text" ' +
+              'class="form-control form-control-sm multi-unstake-destination-input" ' +
+              'placeholder="SS58 address" data-server="' +
+              escapeHtml(s.name) +
+              '" onclick="event.stopPropagation()" ' +
+              'oninput="updateMultiUnstakeEstimate()" />' +
+              "</td>" +
+              "</tr>"
+            );
+          })
+          .join("");
+        onMultiUnstakeModeChanged();
+      }
+
+      function toggleMultiUnstakeRow(row) {
+        row.classList.toggle("selected");
+        updateMultiUnstakeEstimate();
+      }
+
+      function onMultiUnstakeModeChanged() {
+        var isTransfer =
+          document.getElementById("multiUnstakeMode").value ===
+          "unstake_transfer";
+        document
+          .querySelectorAll(".multi-unstake-destination-input")
+          .forEach(function (el) {
+            el.disabled = !isTransfer;
+          });
+        document.getElementById("multiUnstakeDestinationHeader").textContent =
+          isTransfer ? "Destination" : "Destination (n/a — unstake only)";
+        updateMultiUnstakeEstimate();
+      }
+
+      function multiUnstakeSelectedItems() {
+        var destByServer = {};
+        document
+          .querySelectorAll(".multi-unstake-destination-input")
+          .forEach(function (el) {
+            destByServer[el.dataset.server] = el.value.trim();
+          });
+        return Array.prototype.slice
+          .call(
+            document.querySelectorAll("#multiUnstakeServerRows tr.selected"),
+          )
+          .map(function (row) {
+            var server = row.dataset.server;
+            return {
+              server: server,
+              destination: destByServer[server] || "",
+            };
+          });
+      }
+
+      function updateMultiUnstakeEstimate() {
+        var items = multiUnstakeSelectedItems();
+        var el = document.getElementById("multiUnstakeEstimate");
+        el.textContent =
+          items.length === 0
+            ? ""
+            : items.length +
+              " server(s)/coldkey(s) selected — will run at the same time.";
+      }
+
+      function submitMultiUnstakeBatch() {
+        var errEl = document.getElementById("multiUnstakeFormError");
+        errEl.style.display = "none";
+
+        var mode = document.getElementById("multiUnstakeMode").value;
+        var items = multiUnstakeSelectedItems();
+
+        if (items.length === 0) {
+          errEl.style.display = "";
+          errEl.textContent = "Select at least one server.";
+          return;
+        }
+        if (mode === "unstake_transfer") {
+          var missingDest = items.filter(function (it) {
+            return !it.destination;
+          });
+          if (missingDest.length > 0) {
+            errEl.style.display = "";
+            errEl.textContent =
+              "Enter a destination address for: " +
+              missingDest
+                .map(function (it) {
+                  return it.server;
+                })
+                .join(", ");
+            return;
+          }
+        }
+
+        var batchItems = items.map(function (it) {
+          return {
+            server: it.server,
+            mode: mode,
+            destination: mode === "unstake_transfer" ? it.destination : null,
+          };
+        });
+        multiUnstakePendingStart = { items: batchItems };
+
+        document.getElementById("multiUnstakeConfirmDetails").innerHTML =
+          "<div><strong>Action:</strong> " +
+          (mode === "unstake_transfer"
+            ? "Unstake &amp; Transfer"
+            : "Unstake only") +
+          "</div>" +
+          "<div><strong>Servers:</strong> " +
+          items
+            .map(function (it) {
+              return (
+                escapeHtml(it.server) +
+                (mode === "unstake_transfer"
+                  ? " → " + escapeHtml(it.destination)
+                  : "")
+              );
+            })
+            .join(", ") +
+          "</div>" +
+          "<div class='mt-2'><strong>" +
+          items.length +
+          " coldkey(s) run at the same time</strong></div>";
+
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiUnstakeModal"),
+        ).hide();
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiUnstakeConfirmModal"),
+        ).show();
+      }
+
+      document
+        .getElementById("multiUnstakeConfirmModal")
+        .addEventListener("hidden.bs.modal", function () {
+          bootstrap.Modal.getOrCreateInstance(
+            document.getElementById("multiUnstakeModal"),
+          ).show();
+        });
+
+      document
+        .getElementById("multiUnstakeModal")
+        .addEventListener("hidden.bs.modal", function () {
+          // The batch is a server-side background task independent of this
+          // modal — closing it just stops polling from the client side, it
+          // does NOT stop the batch. Reopening the modal resumes showing
+          // progress (see openMultiUnstakeModal).
+          if (multiUnstakePollTimer) {
+            clearInterval(multiUnstakePollTimer);
+            multiUnstakePollTimer = null;
+          }
+        });
+
+      function confirmMultiUnstakeStart() {
+        if (!multiUnstakePendingStart) return;
+        var params = multiUnstakePendingStart;
+        multiUnstakePendingStart = null;
+
+        var confirmModalEl = document.getElementById(
+          "multiUnstakeConfirmModal",
+        );
+        var confirmModal = bootstrap.Modal.getInstance(confirmModalEl);
+        if (confirmModal) confirmModal.hide();
+
+        document.getElementById("multiUnstakeFormSection").style.display =
+          "none";
+        document.getElementById("multiUnstakeProgressSection").style.display =
+          "";
+        document.getElementById("multiUnstakeStartBtn").style.display = "none";
+        document.getElementById("multiUnstakeStatusBadge").textContent =
+          "Starting…";
+        document.getElementById("multiUnstakeStatusBadge").className =
+          "badge bg-secondary";
+        document.getElementById("multiUnstakeQueueRows").innerHTML = "";
+
+        fetch("/api/unstake/batch/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: params.items }),
+        })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.detail || "HTTP " + r.status);
+              return data;
+            });
+          })
+          .then(function (batch) {
+            showMultiUnstakeProgress(batch);
+          })
+          .catch(function (err) {
+            document.getElementById("multiUnstakeFormSection").style.display =
+              "";
+            document.getElementById(
+              "multiUnstakeProgressSection",
+            ).style.display = "none";
+            document.getElementById("multiUnstakeStartBtn").style.display = "";
+            var errEl = document.getElementById("multiUnstakeFormError");
+            errEl.style.display = "";
+            errEl.textContent = "Failed to start batch: " + err.message;
+          });
+      }
+
+      function showMultiUnstakeProgress(batch) {
+        document.getElementById("multiUnstakeFormSection").style.display =
+          "none";
+        document.getElementById("multiUnstakeProgressSection").style.display =
+          "";
+        document.getElementById("multiUnstakeStartBtn").style.display = "none";
+        multiUnstakeActiveBatchId = batch.batch_id;
+        renderMultiUnstakeProgress(batch);
+        if (multiUnstakePollTimer) clearInterval(multiUnstakePollTimer);
+        multiUnstakePollTimer = setInterval(function () {
+          pollMultiUnstakeBatch(batch.batch_id);
+        }, 5000);
+        loadUnstakeActiveRuns(); // show its pill(s) immediately, not after up to 20s
+      }
+
+      function pollMultiUnstakeBatch(batchId) {
+        fetch("/api/unstake/batch/" + encodeURIComponent(batchId))
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(function (batch) {
+            renderMultiUnstakeProgress(batch);
+            if (batch.status === "DONE") {
+              clearInterval(multiUnstakePollTimer);
+              multiUnstakePollTimer = null;
+              loadRegBotBalances(); // balances may have shifted for every included server
+              loadUnstakeActiveRuns(); // the batch's last item may have just finished
+            }
+          })
+          .catch(function (err) {
+            console.warn("Unstake batch poll failed:", err);
+          });
+      }
+
+      function renderMultiUnstakeProgress(batch) {
+        var badge = document.getElementById("multiUnstakeStatusBadge");
+        badge.textContent = batch.status;
+        badge.className =
+          "badge " + (batch.status === "RUNNING" ? "bg-primary" : "bg-success");
+
+        var doneCount = batch.queue.filter(function (i) {
+          return i.status === "DONE" || i.status === "LAUNCH_FAILED";
+        }).length;
+        document.getElementById("multiUnstakeProgressSummary").textContent =
+          doneCount + " / " + batch.queue.length + " complete";
+
+        var rows = document.getElementById("multiUnstakeQueueRows");
+        rows.innerHTML = batch.queue
+          .map(function (item, idx) {
+            var statusLabel = item.status;
+            var icon = MULTI_UNSTAKE_STATUS_ICON[item.status] || "";
+            var detail = "";
+            if (item.status === "DONE") {
+              statusLabel = item.timed_out
+                ? "TIMEOUT"
+                : item.success
+                  ? "SUCCESS"
+                  : "FAILED";
+              if (!item.success) {
+                icon = '<i class="bi bi-x-circle-fill text-danger"></i>';
+              }
+              detail = escapeHtml(item.last_line || "");
+            } else if (item.status === "RUNNING") {
+              detail = escapeHtml(item.last_line || "starting…");
+            } else if (item.status === "LAUNCH_FAILED") {
+              detail = escapeHtml(item.error || "launch failed");
+            }
+            return (
+              "<tr>" +
+              "<td>" +
+              (idx + 1) +
+              "</td>" +
+              "<td>" +
+              escapeHtml(item.server) +
+              "</td>" +
+              "<td>" +
+              (item.mode === "unstake_transfer"
+                ? "Unstake+Transfer"
+                : "Unstake") +
+              "</td>" +
+              "<td>" +
+              icon +
+              " " +
+              statusLabel +
+              "</td>" +
+              "<td style='font-size: 0.78rem'>" +
+              detail +
+              "</td>" +
+              "</tr>"
+            );
+          })
+          .join("");
+      }
+
       // ---- RegBot active-run bar: which server(s) have a live RegBot process ----
       var regbotActiveTimer = null;
 
@@ -7691,6 +9726,99 @@
             return r.json();
           })
           .then(renderRegbotActiveBar)
+          .catch(function () {
+            // Silent — this is a background poll, not a user-initiated action.
+          });
+      }
+
+      // ---- Unstake active-run bar: which coldkey(s) have a live unstake in
+      // flight right now — covers both a solo run and any in-flight batch
+      // item, since a batch item is just a regular run under the hood. ----
+      var unstakeActiveTimer = null;
+
+      function viewUnstakeRun(server, runId, startedAt) {
+        resetUnstakeModal();
+        document.getElementById("unstakeFormSection").style.display = "none";
+        document.getElementById("unstakeResultSection").style.display = "";
+        document.getElementById("unstakeResultBadge").textContent = "Checking…";
+        document.getElementById("unstakeResultBadge").className =
+          "badge bg-secondary";
+        document.getElementById("unstakeResultSummary").textContent =
+          " " + server + " · run " + runId;
+        document.getElementById("unstakeRunBtn").style.display = "none";
+        unstakeCurrentRun = {
+          run_id: runId,
+          startedAt: startedAt ? new Date(startedAt).getTime() : Date.now(),
+        };
+        unstakeLastKnownStatus = "RUNNING";
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("unstakeModal"),
+        ).show();
+        refreshUnstakeLog();
+        unstakeLogTimer = setInterval(refreshUnstakeLog, 4000);
+      }
+
+      function renderUnstakeActiveBar(data) {
+        var bar = document.getElementById("unstakeActiveBar");
+        var inner = document.getElementById("unstakeActiveBarInner");
+        if (
+          getSubnetFromInput() !== 79 ||
+          !data ||
+          !data.active ||
+          data.active.length === 0
+        ) {
+          bar.style.display = "none";
+          return;
+        }
+        bar.style.display = "";
+        var html =
+          '<span class="regbot-hint" style="font-weight: 600">' +
+          '<i class="bi bi-arrow-down-circle"></i> Unstake running:</span>';
+        html += data.active
+          .map(function (r) {
+            var elapsed = r.started_at ? formatElapsedSince(r.started_at) : "";
+            var lastLine = r.last_line || "";
+            var titleText = escapeHtml(
+              r.server +
+                " — " +
+                r.run_id +
+                (elapsed ? "\n" + elapsed : "") +
+                (lastLine ? "\n" + lastLine : ""),
+            );
+            var modeText =
+              r.mode === "unstake_transfer" ? "Unstake+Transfer" : "Unstake";
+            return (
+              '<span class="unstake-run-pill" title="' +
+              titleText +
+              '" onclick="viewUnstakeRun(\'' +
+              r.server +
+              "','" +
+              r.run_id +
+              "','" +
+              (r.started_at || "") +
+              "')\">" +
+              '<span class="unstake-pulse-dot"></span>' +
+              escapeHtml(r.server) +
+              " · " +
+              modeText +
+              "</span>"
+            );
+          })
+          .join("");
+        inner.innerHTML = html;
+      }
+
+      function loadUnstakeActiveRuns() {
+        if (getSubnetFromInput() !== 79) {
+          document.getElementById("unstakeActiveBar").style.display = "none";
+          return;
+        }
+        fetch("/api/unstake/active")
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(renderUnstakeActiveBar)
           .catch(function () {
             // Silent — this is a background poll, not a user-initiated action.
           });

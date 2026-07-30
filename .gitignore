@@ -2,6 +2,10 @@
 .env
 .env.*
 
+# Dashboard login (auth.py) - credentials and signing key, never commit
+auth_users.json
+.dashboard_secret_key
+
 # Python
 __pycache__/
 *.py[cod]
@@ -26,6 +30,12 @@ volume_agent_switches/
 
 # RegBot run audit log (real registration triggers, timestamps, params)
 79Miners/RegBot/regbot_runs.jsonl
+
+# RegBot coldkey balance cache (refreshed every REGBOT_BALANCE_CACHE_SECONDS)
+79Miners/RegBot/balance_cache.json
+
+# Unstake/transfer audit log (real fund movements, timestamps, destinations)
+79Miners/Unstake/unstake_runs.jsonl
 
 # Log files
 logs/

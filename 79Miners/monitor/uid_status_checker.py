@@ -420,9 +420,15 @@ def build_uid_status_response(uid: int, include_books: bool = False, scraper=Non
         scraper = create_scraper()
     summary = fetch_summary(scraper, uid)
     active = not all(v is None for v in summary.values())
+    try:
+        from sim_uid import get_sim_id
+        sim_id = get_sim_id()
+    except Exception:
+        sim_id = None
     result = {
         "uid": uid,
         "active": active,
+        "sim_id": sim_id,
         "summary": [
             {"gauge": gauge, "label": label, "value": summary.get(gauge)}
             for gauge, label in SUMMARY_GAUGES
