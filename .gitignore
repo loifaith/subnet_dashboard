@@ -34,8 +34,14 @@ volume_agent_switches/
 # RegBot coldkey balance cache (refreshed every REGBOT_BALANCE_CACHE_SECONDS)
 79Miners/RegBot/balance_cache.json
 
+# RegBot batch state (persisted so a restart can resume an interrupted batch)
+79Miners/RegBot/active_batch.json
+
 # Unstake/transfer audit log (real fund movements, timestamps, destinations)
 79Miners/Unstake/unstake_runs.jsonl
+
+# Coldkey/IP collection script output
+79Miners/Coldkeys/out/
 
 # Log files
 logs/

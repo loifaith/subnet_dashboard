@@ -33,11 +33,30 @@ MINER_STATUS_REFRESH_SECONDS = int(os.getenv("MINER_STATUS_REFRESH_SECONDS", "90
 FEE_REGIME_CACHE_SECONDS = int(os.getenv("FEE_REGIME_CACHE_SECONDS", "300"))
 REG_COST_CACHE_SECONDS = int(os.getenv("REG_COST_CACHE_SECONDS", "300"))
 REGBOT_BALANCE_CACHE_SECONDS = int(os.getenv("REGBOT_BALANCE_CACHE_SECONDS", "300"))
+COLDKEYS_WATCH_INTERVAL_SECONDS = int(os.getenv("COLDKEYS_WATCH_INTERVAL_SECONDS", "3600"))
 INVESTING88_CACHE_SECONDS = int(os.getenv("INVESTING88_CACHE_SECONDS", "300"))
 INVESTING88_SYNC_HOUR = int(os.getenv("INVESTING88_SYNC_HOUR", "19"))
 INVESTING88_SYNC_INTERVAL_SECONDS = int(os.getenv("INVESTING88_SYNC_INTERVAL_SECONDS", "3600"))
 INVESTING88_SYNC_TZ = os.getenv("INVESTING88_SYNC_TZ", "Asia/Tokyo")
 UID_STATUS_CACHE_MAX = int(os.getenv("UID_STATUS_CACHE_MAX", "256"))
+# Hourly alpha OHLCV per subnet, written by 88dashboard/collect_prices.py as
+# <netuid>.json = {netuid, name, series: [[date, o, h, l, c, v], ...]}.
+ALPHA_PRICE_DIR = os.getenv(
+    "ALPHA_PRICE_DIR", "/root/work/bittensor/88/88dashboard/data/alpha"
+)
+# Window lengths in hours; None = the whole series.
+ALPHA_PRICE_RANGES: dict[str, Optional[int]] = {
+    "24h": 24,
+    "7d": 24 * 7,
+    "30d": 24 * 30,
+    "90d": 24 * 90,
+    "1y": 24 * 365,
+    "all": None,
+}
+ALPHA_PRICE_DEFAULT_RANGE = "7d"
+# The header sparkline is ~130 CSS px wide, so anything past a few hundred points
+# is sub-pixel detail; "all" would otherwise ship 9k points on every poll.
+ALPHA_PRICE_MAX_POINTS = int(os.getenv("ALPHA_PRICE_MAX_POINTS", "240"))
 # How often to refresh the warm SSH master connections to the miner boxes. Must be shorter
 # than the SSH ControlPersist window (600s) so masters never expire between refreshes.
 MINER_PARAMS_KEEPALIVE_SECONDS = int(os.getenv("MINER_PARAMS_KEEPALIVE_SECONDS", "300"))
@@ -54,6 +73,10 @@ _fee_regime_cache: dict[str, Any] = {"payload": None, "expires_at": 0.0}
 _reg_cost_cache: dict[int, dict[str, Any]] = {}
 _investing88_cache: dict[int, dict[str, Any]] = {}
 _sim_id_state: dict[str, Any] = {"last": None}
+# netuid -> {"mtime": float, "rows": [(timestamp, high, low, close), ...]}. Keyed on
+# mtime because collect_prices.py rewrites the file hourly; re-parsing 9k rows of
+# JSON on every poll of an always-visible header widget is not worth it.
+_alpha_price_cache: dict[int, dict[str, Any]] = {}
 
 
 async def _run_status_refresh_subprocess(timeout: float = 600.0) -> None:
@@ -138,6 +161,20 @@ async def _regbot_balance_refresh_worker() -> None:
         await asyncio.sleep(REGBOT_BALANCE_CACHE_SECONDS)
 
 
+async def _coldkeys_watch_worker() -> None:
+    """Collects netuid-79 coldkeys/IPs every COLDKEYS_WATCH_INTERVAL_SECONDS
+    and diffs against the previous run, so the dashboard can flag ones seen
+    for the first time."""
+    from coldkeys_watch import run_collect_and_diff
+
+    while True:
+        try:
+            await run_collect_and_diff()
+        except Exception as exc:
+            logger.error("Coldkey/IP watch run failed: %s", exc)
+        await asyncio.sleep(COLDKEYS_WATCH_INTERVAL_SECONDS)
+
+
 async def _sim_id_watch_worker() -> None:
     """Poll the live TAOS sim epoch and Telegram-alert on change.
 
@@ -183,6 +220,22 @@ async def lifespan(app: FastAPI):
     sim_id_task = asyncio.create_task(_sim_id_watch_worker())
     keepalive_task = asyncio.create_task(_miner_master_keepalive_worker())
     regbot_balance_task = asyncio.create_task(_regbot_balance_refresh_worker())
+    coldkeys_watch_task = asyncio.create_task(_coldkeys_watch_worker())
+
+    async def _resume_regbot_batches() -> None:
+        """A registration batch's orchestrator only lives in this process, so
+        a restart used to silently strand every queue item that hadn't launched
+        yet. Batch state is now persisted, so pick any interrupted one back up."""
+        try:
+            from regbot import resume_interrupted_batches
+
+            result = await resume_interrupted_batches()
+            if result["resumed"]:
+                logger.info("Resumed interrupted batch(es): %s", ", ".join(result["resumed"]))
+        except Exception as exc:
+            logger.error("Could not resume interrupted batches: %s", exc)
+
+    asyncio.create_task(_resume_regbot_batches())
 
     async def _bootstrap_investing88_cache() -> None:
         try:
@@ -201,12 +254,14 @@ async def lifespan(app: FastAPI):
     sim_id_task.cancel()
     keepalive_task.cancel()
     regbot_balance_task.cancel()
+    coldkeys_watch_task.cancel()
     with suppress(asyncio.CancelledError):
         await refresh_task
         await investing88_task
         await sim_id_task
         await keepalive_task
         await regbot_balance_task
+        await coldkeys_watch_task
 
 
 app = FastAPI(title="SN71 Session Manager", lifespan=lifespan)
@@ -447,6 +502,8 @@ SERVER_NICKNAMES = {
     "88.216.195.45": "Server8",
     "65.109.104.253": "Server9",
     "65.108.0.181": "Server10",
+    "65.21.129.168": "Server11",
+    "135.181.138.51": "Server12",
 }
 
 
@@ -1525,7 +1582,7 @@ async def get_reg_cost(request: Request):
     import asyncio
     import time
     from datetime import datetime, timezone
-    from get_reg_cost import get_current_subnet_reg_cost
+    from regbot import run_chain_cli
 
     try:
         netuid = int(request.query_params.get("netuid", "79"))
@@ -1541,9 +1598,17 @@ async def get_reg_cost(request: Request):
         return cached["payload"]
 
     try:
-        result = await asyncio.to_thread(get_current_subnet_reg_cost, netuid)
+        # Out of process, not in a thread: this query takes ~5s of pure-Python substrate
+        # decoding, and run in-process it holds the GIL for that whole time — measured, it
+        # took the event loop's response latency from ~1ms to 6-400ms for the duration, so
+        # every other caller (an agent Confirm, a poll) waited on it. See regbot.chain_cli.
+        payload_cli = await run_chain_cli(["reg-cost", str(netuid)], timeout=120.0)
+        result = payload_cli.get("result") if payload_cli.get("ok") else None
         if result is None:
-            raise HTTPException(status_code=502, detail=f"Failed to fetch reg cost for subnet {netuid}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to fetch reg cost for subnet {netuid}: {payload_cli.get('error') or 'no result'}",
+            )
         payload = {
             **result,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1573,6 +1638,141 @@ async def get_sim_id_endpoint():
     except Exception as e:
         logger.error("Sim id fetch failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
+
+
+def _load_alpha_series(netuid: int) -> Optional[dict[str, Any]]:
+    """Parsed contents of ALPHA_PRICE_DIR/<netuid>.json, or None if there is no
+    such file. Returns rows as (timestamp, high, low, close); open and volume are
+    dropped because nothing here plots them."""
+    path = os.path.join(ALPHA_PRICE_DIR, f"{netuid}.json")
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+
+    cached = _alpha_price_cache.get(netuid)
+    if cached and cached.get("mtime") == mtime:
+        return cached
+
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+
+    rows = []
+    for row in raw.get("series") or []:
+        # [date, open, high, low, close, volume]
+        if not isinstance(row, (list, tuple)) or len(row) < 5:
+            continue
+        try:
+            rows.append((str(row[0]), float(row[2]), float(row[3]), float(row[4])))
+        except (TypeError, ValueError):
+            continue
+
+    entry = {
+        "mtime": mtime,
+        "name": raw.get("name"),
+        "rows": rows,
+    }
+    _alpha_price_cache[netuid] = entry
+    return entry
+
+
+def _downsample_last(rows: list, max_points: int) -> list:
+    """Thin `rows` to at most max_points by keeping the last row of each bucket.
+
+    Last-of-bucket rather than an average because these are closes: averaging
+    invents prices that never traded, and the final point must stay the real
+    latest price. Intra-bucket extremes are lost, which is why the endpoint
+    reports high/low from the full window instead of from this output.
+    """
+    n = len(rows)
+    if n <= max_points:
+        return list(rows)
+    step = n / max_points
+    out = [rows[int((i + 1) * step) - 1] for i in range(max_points)]
+    out[-1] = rows[-1]
+    return out
+
+
+@app.get("/api/alpha-price")
+async def get_alpha_price(request: Request):
+    """Alpha price history for a subnet, windowed and thinned for the header
+    sparkline."""
+    from datetime import timezone
+
+    try:
+        netuid = int(request.query_params.get("netuid", "79"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid netuid parameter")
+    if netuid < 0 or netuid > 255:
+        raise HTTPException(status_code=400, detail="Invalid netuid parameter")
+
+    range_key = (request.query_params.get("range") or ALPHA_PRICE_DEFAULT_RANGE).lower()
+    if range_key not in ALPHA_PRICE_RANGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid range; expected one of {', '.join(ALPHA_PRICE_RANGES)}",
+        )
+
+    try:
+        entry = await asyncio.to_thread(_load_alpha_series, netuid)
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        logger.error("Alpha price read failed for netuid=%s: %s", netuid, e)
+        raise HTTPException(status_code=502, detail=f"Could not read alpha price data: {e}")
+
+    if entry is None:
+        raise HTTPException(
+            status_code=404, detail=f"No alpha price history for subnet {netuid}"
+        )
+    rows = entry["rows"]
+    if not rows:
+        raise HTTPException(
+            status_code=502, detail=f"Alpha price history for subnet {netuid} is empty"
+        )
+
+    hours = ALPHA_PRICE_RANGES[range_key]
+    window = rows
+    if hours is not None:
+        # Sliced on the timestamps rather than by row count: the series is hourly
+        # but not gap-free, so "the last N rows" would quietly overstate the window.
+        try:
+            end = datetime.strptime(rows[-1][0], "%Y-%m-%d %H:%M")
+            cutoff = (end - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M")
+            # Lexicographic compare is exact for zero-padded "%Y-%m-%d %H:%M".
+            start_i = next(
+                (i for i, r in enumerate(rows) if r[0] >= cutoff), len(rows) - 1
+            )
+            window = rows[start_i:]
+        except ValueError:
+            window = rows[-hours:] if hours < len(rows) else rows
+
+    first_close = window[0][3]
+    last_close = window[-1][3]
+    change = last_close - first_close
+    change_pct = (change / first_close * 100.0) if first_close else None
+
+    points = _downsample_last(window, ALPHA_PRICE_MAX_POINTS)
+
+    return {
+        "netuid": netuid,
+        "name": entry.get("name"),
+        "range": range_key,
+        # [[timestamp, close], ...] — the timestamp is passed through verbatim from
+        # the source file, which carries no timezone marker, so it is not restated
+        # as UTC here or in the UI.
+        "points": [[p[0], p[3]] for p in points],
+        "current": last_close,
+        "first": first_close,
+        "change": change,
+        "change_pct": change_pct,
+        # From the full window, not from `points` — see _downsample_last.
+        "high": max(r[1] for r in window),
+        "low": min(r[2] for r in window),
+        "period_start": window[0][0],
+        "period_end": window[-1][0],
+        "source_points": len(window),
+        "downsampled": len(points) < len(window),
+        "updated_at": datetime.fromtimestamp(entry["mtime"], timezone.utc).isoformat(),
+    }
 
 
 @app.get("/api/investing88/miner/{uid}")
@@ -1724,6 +1924,7 @@ class RegBotRunRequest(BaseModel):
     reglimit: float
     max_count: int
     dispatch_agent_id: Optional[int] = None
+    port_prefix: Optional[str] = None  # None = use run79.sh's own default band
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1737,8 +1938,9 @@ class RegBotKillRequest(BaseModel):
 
 class UnstakeTransferRequest(BaseModel):
     server: str
-    mode: str = "unstake_transfer"  # "unstake" or "unstake_transfer"
-    destination: Optional[str] = None  # required when mode == "unstake_transfer"
+    mode: str = "unstake"  # "unstake" | "unstake_transfer" | "transfer"
+    destination: Optional[str] = None  # required for the transfer modes
+    amount: Optional[float] = None  # "transfer" only; None sweeps the balance
     netuid: int = 79
 
     model_config = ConfigDict(extra="forbid")
@@ -1746,8 +1948,9 @@ class UnstakeTransferRequest(BaseModel):
 
 class UnstakeBatchItem(BaseModel):
     server: str
-    mode: str = "unstake_transfer"
+    mode: str = "unstake"
     destination: Optional[str] = None
+    amount: Optional[float] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1762,6 +1965,7 @@ class BatchServerConfig(BaseModel):
     server: str
     count: int
     reglimit: float
+    port_prefix: Optional[str] = None  # None = use run79.sh's own default band
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1801,6 +2005,7 @@ async def regbot_run(payload: RegBotRunRequest):
             payload.reglimit,
             payload.max_count,
             dispatch_agent_id=payload.dispatch_agent_id,
+            port_prefix=payload.port_prefix,
         )
     except RegBotError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1905,7 +2110,12 @@ async def regbot_batch_start(payload: BatchStartRequest):
 
     try:
         server_configs = [
-            {"server": s.server, "count": s.count, "reglimit": s.reglimit}
+            {
+                "server": s.server,
+                "count": s.count,
+                "reglimit": s.reglimit,
+                "port_prefix": s.port_prefix,
+            }
             for s in payload.servers
         ]
         return await start_batch(
@@ -1922,9 +2132,11 @@ async def regbot_batch_start(payload: BatchStartRequest):
 
 @app.get("/api/regbot/batch/active")
 async def regbot_batch_active():
-    from regbot import get_active_batch
+    """`batches` is the full set (several can run at once); `batch` is the most
+    recent one, kept so existing callers keep working."""
+    from regbot import get_active_batch, get_active_batches
 
-    return {"batch": get_active_batch()}
+    return {"batches": get_active_batches(), "batch": get_active_batch()}
 
 
 @app.get("/api/regbot/batch/{batch_id}")
@@ -1966,7 +2178,10 @@ async def unstake_preview(payload: UnstakeTransferRequest):
     from unstake import preview_unstake, UnstakeError
 
     try:
-        return await preview_unstake(payload.server, payload.mode, payload.destination, payload.netuid)
+        return await preview_unstake(
+            payload.server, payload.mode, payload.destination, payload.netuid,
+            amount=payload.amount,
+        )
     except UnstakeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -1979,7 +2194,10 @@ async def unstake_run(payload: UnstakeTransferRequest):
     from unstake import start_unstake_run, UnstakeError
 
     try:
-        return await start_unstake_run(payload.server, payload.mode, payload.destination, payload.netuid)
+        return await start_unstake_run(
+            payload.server, payload.mode, payload.destination, payload.netuid,
+            amount=payload.amount,
+        )
     except UnstakeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -2046,6 +2264,43 @@ async def unstake_history(limit: int = 50):
     from unstake import list_recent_runs
 
     return {"runs": list_recent_runs(limit)}
+
+
+@app.get("/api/coldkeys/summary")
+async def coldkeys_summary():
+    from coldkeys_watch import get_latest_summary
+
+    return get_latest_summary() or {
+        "run_at": None,
+        "is_first_run": True,
+        "new_coldkeys": [],
+        "new_ips": [],
+        "new_coldkey_to_ips": {},
+        "total_coldkeys": 0,
+        "total_ips": 0,
+        "total_miners": 0,
+    }
+
+
+@app.get("/api/coldkeys/list")
+async def coldkeys_list():
+    from coldkeys_watch import get_latest_collection
+
+    data = get_latest_collection()
+    if not data:
+        raise HTTPException(status_code=404, detail="No coldkey/IP collection has run yet")
+    return data
+
+
+@app.post("/api/coldkeys/refresh")
+async def coldkeys_refresh():
+    from coldkeys_watch import run_collect_and_diff
+
+    try:
+        return await run_collect_and_diff()
+    except Exception as e:
+        logger.error("Manual coldkeys refresh failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 if __name__ == "__main__":

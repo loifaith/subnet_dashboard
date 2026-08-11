@@ -57,7 +57,27 @@ _run_tasks: Dict[str, "asyncio.Task[None]"] = {}
 _SS58_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{46,48}$")
 
 
-MODES = ("unstake", "unstake_transfer")
+MODES = ("unstake", "unstake_transfer", "transfer")
+# Modes that move TAO off the coldkey, and therefore require a destination.
+# "transfer" sweeps only the free balance already sitting there (no unstake).
+TRANSFER_MODES = ("unstake_transfer", "transfer")
+
+# Where each coldkey's TAO is swept by default. Only a pre-fill for the forms —
+# every destination is still shown in the confirm dialog and can be overridden
+# per run. Keyed by wallet name, since that's what identifies the coldkey.
+DEFAULT_DESTINATIONS: Dict[str, str] = {
+    "bittensor001": "5Ehjf6NtQXDNGUKKPQrFwYUnYnYw8giVarJerUXiDmCzg1jk",
+    "bittensor002": "5Ehjf6NtQXDNGUKKPQrFwYUnYnYw8giVarJerUXiDmCzg1jk",
+    "bittensor005": "5DUeuL8A8NukziacaDkztXEGnC3kJrEQvXC1ujmidt5GT6br",
+    "bittensor006": "5DUeuL8A8NukziacaDkztXEGnC3kJrEQvXC1ujmidt5GT6br",
+    "bittensor007": "5DUeuL8A8NukziacaDkztXEGnC3kJrEQvXC1ujmidt5GT6br",
+    "wolf001": "5GRUugodxkeVw1F9yL2Dc4t1saobDE1VLoW7LRy6513CXiN5",
+    "wolf002": "5GRUugodxkeVw1F9yL2Dc4t1saobDE1VLoW7LRy6513CXiN5",
+    "wolf004": "5GRUugodxkeVw1F9yL2Dc4t1saobDE1VLoW7LRy6513CXiN5",
+    # w003 and w005 sweep somewhere different from the other wolf coldkeys.
+    "wolf003": "5DaBPf7w764Y5n6VNRE1aMPQdmkubNjRXqvu1heUQFuSSbUp",
+    "wolf005": "5DaBPf7w764Y5n6VNRE1aMPQdmkubNjRXqvu1heUQFuSSbUp",
+}
 
 
 class UnstakeError(ValueError):
@@ -65,17 +85,29 @@ class UnstakeError(ValueError):
 
 
 def get_unstake_server_presets() -> List[Dict[str, str]]:
-    return [dict(p) for p in SERVER_PRESETS]
+    presets = []
+    for p in SERVER_PRESETS:
+        entry = dict(p)
+        entry["default_destination"] = DEFAULT_DESTINATIONS.get(p["wallet"])
+        presets.append(entry)
+    return presets
 
 
-def _validate(server: str, mode: str, destination: Optional[str]) -> Dict[str, str]:
+def _validate(
+    server: str, mode: str, destination: Optional[str], amount: Optional[float] = None
+) -> Dict[str, str]:
     preset = _PRESETS_BY_NAME.get(server)
     if not preset:
         raise UnstakeError(f"Unknown server '{server}'")
     if mode not in MODES:
         raise UnstakeError(f"mode must be one of {MODES}")
-    if mode == "unstake_transfer" and (not destination or not _SS58_RE.match(destination)):
+    if mode in TRANSFER_MODES and (not destination or not _SS58_RE.match(destination)):
         raise UnstakeError("Destination must be a valid SS58 address")
+    if amount is not None:
+        if mode != "transfer":
+            raise UnstakeError("amount only applies to 'transfer' mode")
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            raise UnstakeError("amount must be a positive number of TAO")
     return preset
 
 
@@ -94,6 +126,7 @@ async def _run_unstake_env(
     dry_run: bool,
     timeout: float,
     log_path: Optional[str] = None,
+    amount: Optional[float] = None,
 ) -> Dict[str, Any]:
     """log_path=None (preview): buffer output in memory, return it all at once
     when the short-lived dry-run finishes — same as before. log_path set (a
@@ -104,8 +137,12 @@ async def _run_unstake_env(
         "--coldkey", coldkey,
         "--netuid", str(netuid),
     ]
-    if mode == "unstake_transfer":
+    if mode in TRANSFER_MODES:
         cmd += ["--destination", destination]
+    # Omitted entirely when unset, so unstake_env.py falls back to sweeping the
+    # whole balance — its own default, not one restated here.
+    if amount is not None:
+        cmd += ["--amount", str(amount)]
     if dry_run:
         cmd.append("--dry-run")
 
@@ -189,14 +226,16 @@ def _append_audit_log(entry: Dict[str, Any]) -> None:
 
 
 async def preview_unstake(
-    server: str, mode: str, destination: Optional[str] = None, netuid: int = DEFAULT_NETUID
+    server: str, mode: str, destination: Optional[str] = None, netuid: int = DEFAULT_NETUID,
+    amount: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Dry-run: shows exactly what would happen (hotkeys to unstake, free
     balance, and — for unstake_transfer — the sendable amount) without
     submitting anything to the chain."""
-    preset = _validate(server, mode, destination)
+    preset = _validate(server, mode, destination, amount)
     result = await _run_unstake_env(
-        preset["wallet"], netuid, mode, destination, dry_run=True, timeout=PREVIEW_TIMEOUT_SECONDS
+        preset["wallet"], netuid, mode, destination, dry_run=True,
+        timeout=PREVIEW_TIMEOUT_SECONDS, amount=amount,
     )
     return {
         "server": server,
@@ -204,6 +243,7 @@ async def preview_unstake(
         "netuid": netuid,
         "mode": mode,
         "destination": destination,
+        "amount": amount,
         **result,
     }
 
@@ -245,6 +285,7 @@ async def start_unstake_run(
     destination: Optional[str] = None,
     netuid: int = DEFAULT_NETUID,
     triggered_by: str = "dashboard",
+    amount: Optional[float] = None,
 ) -> Dict[str, Any]:
     """The real thing — unstakes (and, for unstake_transfer, sends) real TAO.
     Irreversible. Launches as a background task and returns immediately with
@@ -255,7 +296,7 @@ async def start_unstake_run(
         raise UnstakeError(
             f"An unstake run is already in progress for {server} — wait for it to finish before starting another."
         )
-    preset = _validate(server, mode, destination)
+    preset = _validate(server, mode, destination, amount)
     os.makedirs(LOG_DIR, exist_ok=True)
     run_id = f"{server}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     log_path = os.path.join(LOG_DIR, f"{run_id}.log")
@@ -266,6 +307,7 @@ async def start_unstake_run(
         "wallet": preset["wallet"],
         "mode": mode,
         "destination": destination,
+        "amount": amount,
         "netuid": netuid,
         "log_path": log_path,
         "status": "RUNNING",
@@ -276,7 +318,7 @@ async def start_unstake_run(
     }
     _active_runs[run_id] = run
     _run_tasks[run_id] = asyncio.create_task(
-        _do_unstake_run(run_id, preset, mode, destination, netuid, triggered_by)
+        _do_unstake_run(run_id, preset, mode, destination, netuid, triggered_by, amount)
     )
     return dict(run)
 
@@ -288,12 +330,14 @@ async def _do_unstake_run(
     destination: Optional[str],
     netuid: int,
     triggered_by: str,
+    amount: Optional[float] = None,
 ) -> None:
     run = _active_runs[run_id]
     try:
         result = await _run_unstake_env(
             preset["wallet"], netuid, mode, destination,
             dry_run=False, timeout=RUN_TIMEOUT_SECONDS, log_path=run["log_path"],
+            amount=amount,
         )
         run["success"] = result["success"]
         run["timed_out"] = result["timed_out"]
@@ -309,6 +353,7 @@ async def _do_unstake_run(
             "netuid": netuid,
             "mode": mode,
             "destination": destination,
+            "amount": amount,
             **result,
         }
         _append_audit_log(entry)
@@ -346,6 +391,7 @@ def get_unstake_run_status(run_id: str) -> Dict[str, Any]:
         "server": run["server"],
         "mode": run["mode"],
         "destination": run["destination"],
+        "amount": run.get("amount"),
         "status": run["status"],
         "success": run.get("success"),
         "timed_out": run.get("timed_out", False),
@@ -403,7 +449,7 @@ async def start_unstake_batch(
         if it["server"] in seen_servers:
             raise UnstakeError(f"Server '{it['server']}' selected more than once.")
         seen_servers.add(it["server"])
-        _validate(it["server"], it["mode"], it.get("destination"))
+        _validate(it["server"], it["mode"], it.get("destination"), it.get("amount"))
         if _server_busy(it["server"]):
             raise UnstakeError(f"An unstake run is already in progress for {it['server']}.")
 
@@ -413,6 +459,7 @@ async def start_unstake_batch(
             "server": it["server"],
             "mode": it["mode"],
             "destination": it.get("destination"),
+            "amount": it.get("amount"),
             "status": "PENDING",
             "run_id": None,
             "success": None,
@@ -442,6 +489,7 @@ async def _run_one_batch_item(item: Dict[str, Any], batch_id: str) -> None:
     try:
         run = await start_unstake_run(
             item["server"], item["mode"], item.get("destination"),
+            amount=item.get("amount"),
             triggered_by=f"batch:{batch_id}",
         )
     except Exception as exc:

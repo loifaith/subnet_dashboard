@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -42,21 +43,40 @@ REMOTE_RUNS_SUBDIR = "dashboard_runs"
 REMOTE_MINER_REPO = "/root/79/sn-79"
 LOCAL_PARAMS_DIR = os.path.join(DASHBOARD_ROOT, "79Miners", "params")
 SSH_USER = "root"
-SSH_OPTS = ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+# Multiplexed, like the params push (app.py's MINER_PARAMS_RSYNC_SSH_OPTS) — and deliberately
+# on the SAME ControlPath, so both share one master per box and the params keepalive worker
+# keeps them warm for free. Every RegBot probe used to pay a full TCP/KEX/auth handshake:
+# `get_active_runs` fans out one ssh per server preset, so on the overseas boxes (125-160ms
+# RTT) that was ~10 round-trips × 18 servers on every poll. ControlMaster=auto still falls
+# back to a fresh connection if no master is up, so a cold start behaves exactly as before.
+SSH_OPTS = [
+    "-o", "ConnectTimeout=10",
+    "-o", "BatchMode=yes",
+    "-o", "GSSAPIAuthentication=no",
+    "-o", "ControlMaster=auto",
+    "-o", "ControlPath=/tmp/.mp-cm-%C",
+    "-o", "ControlPersist=600",
+]
 
 # Server presets: dashboard "Server" selection -> (ip, wallet). Keep in sync
 # with SERVER_NICKNAMES in app.py / miners.html.
+# port_prefix is the axon port band the dashboard pre-fills for this server
+# (creg79.py --port-prefix; X is a wildcard digit). It's only a default — the
+# Add Miner / Multi-Server Register forms let you override it per run, and
+# clearing the field falls back to run79.sh's own default.
 SERVER_PRESETS: List[Dict[str, str]] = [
-    {"name": "Server1", "ip": "65.108.232.96", "wallet": "bittensor001"},
-    {"name": "Server2", "ip": "65.108.108.139", "wallet": "bittensor002"},
-    {"name": "Server3", "ip": "65.109.87.169", "wallet": "bittensor005"},
-    {"name": "Server4", "ip": "178.16.143.193", "wallet": "bittensor006"},
-    {"name": "Server5", "ip": "144.91.111.126", "wallet": "bittensor007"},
-    {"name": "Server6", "ip": "65.109.65.81", "wallet": "wolf003"},
-    {"name": "Server7", "ip": "84.32.34.89", "wallet": "wolf002"},
-    {"name": "Server8", "ip": "88.216.195.45", "wallet": "wolf001"},
-    {"name": "Server9", "ip": "65.109.104.253", "wallet": "wolf004"},
-    {"name": "Server10", "ip": "65.108.0.181", "wallet": "wolf005"},
+    {"name": "Server1", "ip": "65.108.232.96", "wallet": "bittensor001", "port_prefix": "79XX"},
+    {"name": "Server2", "ip": "65.108.108.139", "wallet": "bittensor002", "port_prefix": "79XX"},
+    {"name": "Server3", "ip": "65.109.87.169", "wallet": "bittensor005", "port_prefix": "809X"},
+    {"name": "Server4", "ip": "178.16.143.193", "wallet": "bittensor006", "port_prefix": "809X"},
+    {"name": "Server5", "ip": "144.91.111.126", "wallet": "bittensor007", "port_prefix": "809X"},
+    {"name": "Server6", "ip": "65.109.65.81", "wallet": "wolf003", "port_prefix": "809X"},
+    {"name": "Server7", "ip": "84.32.34.89", "wallet": "wolf002", "port_prefix": "809X"},
+    {"name": "Server8", "ip": "88.216.195.45", "wallet": "wolf001", "port_prefix": "809X"},
+    {"name": "Server9", "ip": "65.109.104.253", "wallet": "wolf004", "port_prefix": "809X"},
+    {"name": "Server10", "ip": "65.108.0.181", "wallet": "wolf005", "port_prefix": "809X"},
+    {"name": "Server11", "ip": "65.21.129.168", "wallet": "kolfei001", "port_prefix": "808X"},
+    {"name": "Server12", "ip": "135.181.138.51", "wallet": "kolfei002", "port_prefix": "808X"},
 ]
 _PRESETS_BY_NAME = {p["name"]: p for p in SERVER_PRESETS}
 
@@ -66,7 +86,30 @@ _DEFAULT_AGENT_OPTIONS = ["WarriorAgent", "RandomMakerAgentGamma", "FreeAllAgent
 REGLIMIT_MIN, REGLIMIT_MAX = 0.0001, 5.0
 MAX_COUNT_MIN, MAX_COUNT_MAX = 1, 10
 
+# Axon port band pattern for creg79.py --port-prefix: digits with X as a
+# wildcard digit (79XX = 7900-7999), comma-separated to overflow into later
+# bands ("809X,808X"). This value is interpolated into a shell script that
+# runs as root on the miner box, so the character class is deliberately
+# restrictive — digits, X and commas only, nothing that could break out of
+# the assignment. creg79.py itself validates the semantics (band ordering,
+# width) and errors clearly if the pattern is nonsense.
+PORT_PREFIX_RE = re.compile(r"^[0-9X]{1,4}(,[0-9X]{1,4})*$")
+
 RUN_ID_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
+
+# Preset names are embedded verbatim in run_id (f"{server}_{stamp}_{suffix}"),
+# which then becomes the remote log/pid/script filenames. A name that doesn't
+# match RUN_ID_RE therefore can't launch at all — and it fails late, at launch
+# time, one queue item at a time, so a batch happily accepts the server and
+# then burns every one of its slots on "Invalid run_id". A trailing space in
+# "Server3 " did exactly that. Checked here so a bad preset is a startup
+# crash instead of a silent per-run failure.
+_BAD_PRESET_NAMES = [p["name"] for p in SERVER_PRESETS if not RUN_ID_RE.match(p["name"])]
+if _BAD_PRESET_NAMES:
+    raise RuntimeError(
+        f"SERVER_PRESETS names unusable in a run_id: {_BAD_PRESET_NAMES!r} — "
+        f"allowed characters are {RUN_ID_RE.pattern} (check for stray whitespace)"
+    )
 
 
 class RegBotError(ValueError):
@@ -92,9 +135,54 @@ def _wallet_coldkey_address(wallet: str) -> Optional[str]:
         return None
 
 
-async def get_server_balance(server: str) -> Dict[str, Any]:
-    """Free TAO balance + total staked (SN79 alpha) of the coldkey behind
-    this server's preset wallet."""
+# ---- chain queries run OUT OF PROCESS -------------------------------------------------
+# substrate's metadata decode is pure Python and holds the GIL for seconds at a time, so a
+# chain query made inside the API process — even in a thread — starves the asyncio loop, and
+# every unrelated request queues behind it. Measured on this box: an agent Confirm, which
+# touches no chain at all, waited 13.7s on the 300s balance sweep. chain_cli.py does the same
+# work in a child process with its own GIL, and answers every address over ONE connection
+# instead of opening one per address.
+CHAIN_CLI = os.path.join(_HERE, "chain_cli.py")
+
+
+async def run_chain_cli(args: List[str], timeout: float) -> Dict[str, Any]:
+    """Run chain_cli.py and return its parsed payload. Never raises — a failed child comes
+    back as {"ok": False, "error": ...} so callers have one shape to handle."""
+    import sys
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable or "python3",
+            CHAIN_CLI,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=_HERE,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": f"could not start chain_cli: {exc}"}
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        return {"ok": False, "error": f"chain_cli timed out after {timeout}s"}
+    if proc.returncode != 0:
+        err = stderr.decode("utf-8", "replace").strip() or f"exit {proc.returncode}"
+        return {"ok": False, "error": err[-300:]}
+    # Some bittensor versions print banners to stdout, so the payload is the last JSON line.
+    for line in reversed(stdout.decode("utf-8", "replace").strip().splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+    return {"ok": False, "error": "chain_cli produced no JSON"}
+
+
+def _server_coldkey(server: str) -> tuple[str, str]:
+    """(wallet, coldkey ss58) for a server preset. Raises if either is unresolvable."""
     preset = _PRESETS_BY_NAME.get(server)
     if not preset:
         raise RegBotError(f"Unknown server '{server}'")
@@ -105,11 +193,18 @@ async def get_server_balance(server: str) -> Dict[str, Any]:
             f"Could not resolve coldkey address for wallet '{wallet}' "
             f"(missing {LOCAL_WALLETS_DIR}/{wallet}/coldkeypub.txt)"
         )
-    from get_reg_cost import get_balance_and_stake_for_address
+    return wallet, address
 
-    result = await asyncio.to_thread(get_balance_and_stake_for_address, address, 79)
+
+async def get_server_balance(server: str) -> Dict[str, Any]:
+    """Free TAO balance + total staked (SN79 alpha) of the coldkey behind
+    this server's preset wallet."""
+    wallet, address = _server_coldkey(server)
+    payload = await run_chain_cli(["balances", "79", address], timeout=120.0)
+    result = payload.get("balances", {}).get(address) if payload.get("ok") else None
     if result is None:
-        raise RuntimeError(f"Failed to fetch balance for wallet '{wallet}'")
+        why = payload.get("error") or payload.get("errors", {}).get(address) or "no result"
+        raise RuntimeError(f"Failed to fetch balance for wallet '{wallet}': {why}")
     return {"server": server, "wallet": wallet, **result}
 
 
@@ -117,20 +212,45 @@ BALANCE_CACHE_PATH = os.path.join(DASHBOARD_ROOT, "79Miners", "RegBot", "balance
 
 
 async def refresh_balance_cache() -> Dict[str, Any]:
-    """Fetch every server's coldkey balance concurrently and persist to
-    BALANCE_CACHE_PATH, so reads can be served from disk instead of a live
-    chain call each time. One wallet failing (e.g. missing coldkeypub.txt)
-    doesn't block the others — it's just dropped with a logged warning."""
-    results = await asyncio.gather(
-        *[get_server_balance(p["name"]) for p in SERVER_PRESETS],
-        return_exceptions=True,
-    )
-    balances: Dict[str, Any] = {}
-    for preset, result in zip(SERVER_PRESETS, results):
-        if isinstance(result, Exception):
-            logger.warning("Balance refresh failed for %s: %s", preset["name"], result)
+    """Fetch every server's coldkey balance and persist to BALANCE_CACHE_PATH, so reads are
+    served from disk instead of a live chain call each time. One wallet failing (e.g. a
+    missing coldkeypub.txt) doesn't block the others — it's dropped with a logged warning.
+
+    ONE child, ONE connection, ALL addresses. This used to fan out one `to_thread` per preset:
+    18 threads each opening their own substrate connection, every 300s. The connect is where
+    the metadata decode happens, so that was 18 GIL-hogging decodes at once inside the API
+    process — the single worst source of request latency on this service (13.7s stalls, ending
+    exactly when this cache file was written). The presets share only 12 distinct coldkeys, so
+    de-duplicating first also cuts the chain work by a third.
+    """
+    wanted: Dict[str, str] = {}  # server name -> address
+    for preset in SERVER_PRESETS:
+        try:
+            _, address = _server_coldkey(preset["name"])
+        except RegBotError as exc:
+            logger.warning("Balance refresh skipped for %s: %s", preset["name"], exc)
             continue
-        balances[preset["name"]] = result
+        wanted[preset["name"]] = address
+
+    balances: Dict[str, Any] = {}
+    if wanted:
+        addresses = list(dict.fromkeys(wanted.values()))
+        payload = await run_chain_cli(["balances", "79", *addresses], timeout=300.0)
+        if not payload.get("ok"):
+            logger.warning("Balance refresh failed: %s", payload.get("error"))
+        by_address = payload.get("balances", {}) or {}
+        errors = payload.get("errors", {}) or {}
+        for server, address in wanted.items():
+            result = by_address.get(address)
+            if result is None:
+                logger.warning(
+                    "Balance refresh failed for %s: %s",
+                    server,
+                    errors.get(address) or payload.get("error") or "no result",
+                )
+                continue
+            preset = _PRESETS_BY_NAME.get(server, {})
+            balances[server] = {"server": server, "wallet": preset.get("wallet"), **result}
     payload = {"balances": balances, "updated_at": datetime.now(timezone.utc).isoformat()}
 
     os.makedirs(os.path.dirname(BALANCE_CACHE_PATH), exist_ok=True)
@@ -208,10 +328,16 @@ def _validate_inputs(
     reglimit: float,
     max_count: int,
     dispatch_agent_id: Optional[int] = None,
+    port_prefix: Optional[str] = None,
 ) -> Dict[str, str]:
     preset = _PRESETS_BY_NAME.get(server)
     if not preset:
         raise RegBotError(f"Unknown server '{server}'")
+    if port_prefix is not None and not PORT_PREFIX_RE.match(port_prefix):
+        raise RegBotError(
+            f"port_prefix '{port_prefix}' is invalid — use digits with X as a "
+            "wildcard digit (e.g. 79XX, 809X), comma-separated for multiple bands"
+        )
     if not dispatch_agent or not re.match(r"^[A-Za-z0-9_]+$", dispatch_agent):
         raise RegBotError("dispatch_agent must be a plain agent name (letters/digits/underscore)")
     if dispatch_agent_id is not None and not (
@@ -233,6 +359,7 @@ def _build_script(
     max_count: int,
     wallet: str,
     dispatch_agent_id: Optional[int] = None,
+    port_prefix: Optional[str] = None,
 ) -> str:
     with open(TEMPLATE_PATH, encoding="utf-8") as f:
         content = f.read()
@@ -286,13 +413,30 @@ def _build_script(
         f'WALLET="${{WALLET:-{wallet}}}"\\1',
         content,
     )
+    # Only rewritten when a band was actually requested — left alone, the
+    # template's own PORT_PREFIX default applies, so existing behaviour is
+    # unchanged for callers that don't care. Note the template uses `-` not
+    # `:-` (an explicitly empty value means "no band"), so the pattern here
+    # has to match that single dash.
+    if port_prefix is not None:
+        content = sub(
+            r'^PORT_PREFIX="\$\{PORT_PREFIX-[^}]*\}"',
+            f'PORT_PREFIX="${{PORT_PREFIX-{port_prefix}}}"',
+            content,
+        )
     return content
 
 
 def _make_run_id() -> str:
-    # epoch-seconds based; timestamps are supplied by the caller (FastAPI request time)
-    # to keep this module free of direct time.time()/datetime.now() side effects in tests.
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Timestamp for readability + a random suffix for uniqueness. The suffix is
+    # not decorative: run_id determines the remote log/pid/script paths, and the
+    # timestamp only has second resolution, so two runs launched on the same
+    # server within one second would otherwise share all three files — the
+    # second run's pidfile would clobber the first's, making kill_run target
+    # the wrong process and tail_log show the wrong log. Concurrent batches on
+    # one server make that collision likely rather than theoretical.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{stamp}_{secrets.token_hex(3)}"
 
 
 def _remote_run_path(run_id: str, ext: str) -> str:
@@ -325,13 +469,26 @@ async def trigger_run(
     max_count: int,
     triggered_by: str = "dashboard",
     dispatch_agent_id: Optional[int] = None,
+    port_prefix: Optional[str] = None,
+    run_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Generate a run79.sh for this server+params, scp it over, launch it detached."""
-    preset = _validate_inputs(server, dispatch_agent, reglimit, max_count, dispatch_agent_id)
+    """Generate a run79.sh for this server+params, scp it over, launch it detached.
+
+    run_id may be pre-assigned by the caller so the run's identity (and hence
+    its remote log/pid paths) is known and persistable *before* the launch is
+    attempted — that's what lets a batch tell, after a crash mid-launch,
+    exactly which run to look for instead of guessing."""
+    preset = _validate_inputs(
+        server, dispatch_agent, reglimit, max_count, dispatch_agent_id, port_prefix
+    )
     ip, wallet = preset["ip"], preset["wallet"]
 
-    script_content = _build_script(dispatch_agent, reglimit, max_count, wallet, dispatch_agent_id)
-    run_id = f"{server}_{_make_run_id()}"
+    script_content = _build_script(
+        dispatch_agent, reglimit, max_count, wallet, dispatch_agent_id, port_prefix
+    )
+    if run_id is not None and not RUN_ID_RE.match(run_id):
+        raise RegBotError("Invalid run_id")
+    run_id = run_id or f"{server}_{_make_run_id()}"
     script_name = f"run79_{run_id}.sh"
     remote_dir = f"{REMOTE_REGBOT_DIR}/{REMOTE_RUNS_SUBDIR}"
     remote_script = f"{remote_dir}/{script_name}"
@@ -408,6 +565,7 @@ async def trigger_run(
         "dispatch_agent_id": dispatch_agent_id,
         "reglimit": reglimit,
         "max_count": max_count,
+        "port_prefix": port_prefix,
         "remote_script": remote_script,
         "remote_log": remote_log,
         "remote_pid": remote_pid,
@@ -757,6 +915,29 @@ _active_batches: Dict[str, Dict[str, Any]] = {}
 _batch_tasks: Dict[str, "asyncio.Task[None]"] = {}
 BATCH_POLL_INTERVAL_SECONDS = 10.0
 
+# The orchestrator that walks a batch's queue is just an asyncio task in the
+# dashboard process, so anything that restarts the dashboard (a deploy, a pm2
+# restart, a crash) used to kill it mid-queue and silently drop every PENDING
+# item — the already-launched remote runs kept going and registered fine, so
+# from the outside it looked like "the batch just stopped registering". That
+# happened for real on 2026-08-03 (batch_20260803T013020Z: 4 items registered,
+# restart at 03:13:24Z, remaining items never launched). State is mirrored to
+# this file on every transition so a restart can pick the queue back up.
+BATCH_STATE_PATH = os.path.join(DASHBOARD_ROOT, "79Miners", "RegBot", "active_batch.json")
+
+
+def _save_batch_state() -> None:
+    """Mirror in-memory batches to disk. Never raises — losing persistence is
+    bad, but not a reason to take down a batch that is otherwise running."""
+    try:
+        os.makedirs(os.path.dirname(BATCH_STATE_PATH), exist_ok=True)
+        tmp_path = f"{BATCH_STATE_PATH}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump({"batches": list(_active_batches.values())}, f, indent=2)
+        os.replace(tmp_path, BATCH_STATE_PATH)  # atomic: never a half-written file
+    except OSError as exc:
+        logger.warning("Could not persist batch state: %s", exc)
+
 
 def _build_batch_queue(server_configs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Round-robin one attempt per server per round (in the given server
@@ -764,7 +945,12 @@ def _build_batch_queue(server_configs: List[Dict[str, Any]]) -> List[Dict[str, A
     server's count is met. Each queue item is one single-hotkey attempt,
     carrying that server's own reglimit."""
     remaining = [
-        {"server": sc["server"], "reglimit": sc["reglimit"], "left": int(sc["count"])}
+        {
+            "server": sc["server"],
+            "reglimit": sc["reglimit"],
+            "port_prefix": sc.get("port_prefix"),
+            "left": int(sc["count"]),
+        }
         for sc in server_configs
         if int(sc["count"]) > 0
     ]
@@ -778,6 +964,7 @@ def _build_batch_queue(server_configs: List[Dict[str, Any]]) -> List[Dict[str, A
                     "server": r["server"],
                     "seq": seq_counters[r["server"]],
                     "reglimit": r["reglimit"],
+                    "port_prefix": r["port_prefix"],
                     "status": "PENDING",
                     "run_id": None,
                     "last_line": None,
@@ -790,11 +977,18 @@ def _build_batch_queue(server_configs: List[Dict[str, Any]]) -> List[Dict[str, A
     return queue
 
 
+def get_active_batches() -> List[Dict[str, Any]]:
+    """Every batch still working, newest first. Several can run at once —
+    including on the same server (an explicit choice; see start_batch)."""
+    running = [b for b in _active_batches.values() if b["status"] in ("RUNNING", "CANCELLING")]
+    return sorted(running, key=lambda b: b.get("created_at") or "", reverse=True)
+
+
 def get_active_batch() -> Optional[Dict[str, Any]]:
-    for batch in _active_batches.values():
-        if batch["status"] == "RUNNING":
-            return batch
-    return None
+    """Most recently started active batch, or None. Kept for callers that only
+    ever deal with one at a time."""
+    active = get_active_batches()
+    return active[0] if active else None
 
 
 def get_batch_status(batch_id: str) -> Dict[str, Any]:
@@ -811,11 +1005,13 @@ async def start_batch(
     triggered_by: str = "dashboard",
 ) -> Dict[str, Any]:
     """server_configs: [{"server": "Server1", "count": 3, "reglimit": 0.1051}, ...]
-    — each server can carry its own reglimit."""
-    if get_active_batch() is not None:
-        raise RegBotError(
-            "A registration batch is already running — cancel it before starting another."
-        )
+    — each server can carry its own reglimit.
+
+    Batches run concurrently, including several targeting the same server. That
+    is deliberate, but it means the same coldkey can have two registrations in
+    flight at once, so the wallet drains at twice the rate its per-batch reg
+    limits would suggest — check the balance against the combined spend of
+    everything running, not just this batch."""
     for sc in server_configs:
         if sc["server"] not in _PRESETS_BY_NAME:
             raise RegBotError(f"Unknown server '{sc['server']}'")
@@ -824,13 +1020,23 @@ async def start_batch(
         # Reuses the exact same per-server validation trigger_run() applies
         # on launch (agent name shape, reglimit range) so a bad batch is
         # rejected up front rather than partway through the queue.
-        _validate_inputs(sc["server"], dispatch_agent, sc["reglimit"], 1, dispatch_agent_id)
+        _validate_inputs(
+            sc["server"], dispatch_agent, sc["reglimit"], 1,
+            dispatch_agent_id, sc.get("port_prefix"),
+        )
 
     queue = _build_batch_queue(server_configs)
     if not queue:
         raise RegBotError("Nothing to register — every count is zero")
 
-    batch_id = f"batch_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    # Random suffix for the same reason run_id has one: batches are keyed by
+    # this in _active_batches, and now that several can start concurrently two
+    # created in the same second would otherwise collide — the second silently
+    # replacing the first, orphaning its queue.
+    batch_id = (
+        f"batch_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+        f"_{secrets.token_hex(2)}"
+    )
     batch: Dict[str, Any] = {
         "batch_id": batch_id,
         "server_configs": server_configs,
@@ -844,6 +1050,7 @@ async def start_batch(
         "triggered_by": triggered_by,
     }
     _active_batches[batch_id] = batch
+    _save_batch_state()
     _batch_tasks[batch_id] = asyncio.create_task(_run_batch(batch_id))
     return batch
 
@@ -857,38 +1064,118 @@ async def cancel_batch(batch_id: str) -> Dict[str, Any]:
         # BATCH_POLL_INTERVAL_SECONDS later) and kills the in-flight attempt
         # before stopping — this just requests that, doesn't do it inline.
         batch["status"] = "CANCELLING"
+        # Persisted immediately so a restart landing between this flag and the
+        # loop noticing it doesn't come back up and resume a cancelled batch.
+        _save_batch_state()
     return batch
+
+
+_FINALISED_ITEM_STATUSES = ("DONE", "CANCELLED", "LAUNCH_FAILED")
+
+
+async def _remote_run_exists(server: str, run_id: str) -> bool:
+    """Did this exact run ever land on the box? Because run_id is assigned (and
+    persisted) before the launch, a batch resuming after a crash can ask about
+    its own specific run rather than inferring from whatever happens to be
+    live — which is what makes concurrent runs on one server safe to resume.
+    Raises when the server can't be reached: 'no answer' must not be read as
+    'never launched', since relaunching a run that did start double-registers
+    and double-spends."""
+    preset = _PRESETS_BY_NAME.get(server)
+    if not preset:
+        raise RegBotError(f"Unknown server '{server}'")
+    log_path = _remote_run_path(run_id, "log")
+    pid_path = _remote_run_path(run_id, "pid")
+    cmd = [
+        "ssh", *SSH_OPTS, f"{SSH_USER}@{preset['ip']}",
+        f'if [ -f "{log_path}" ] || [ -f "{pid_path}" ]; then echo YES; else echo NO; fi',
+    ]
+    try:
+        rc, out, err = await _run_subprocess(cmd, timeout=15)
+    except asyncio.TimeoutError:
+        raise RegBotError(f"{server} timed out — cannot confirm whether run {run_id} launched")
+    if rc != 0:
+        raise RegBotError(
+            f"{server} unreachable ({err.strip() or out.strip()}) — "
+            f"cannot confirm whether run {run_id} launched"
+        )
+    return "YES" in out
 
 
 async def _run_batch(batch_id: str) -> None:
     batch = _active_batches[batch_id]
     queue = batch["queue"]
+    interrupted = False
     try:
         for index, item in enumerate(queue):
             if batch["status"] == "CANCELLING":
-                item["status"] = "CANCELLED"
+                if item["status"] not in _FINALISED_ITEM_STATUSES:
+                    item["status"] = "CANCELLED"
+                    _save_batch_state()
                 continue
+
+            # Already settled on an earlier pass — only possible when resuming
+            # a batch after a restart. Re-running it would double-register.
+            if item["status"] in _FINALISED_ITEM_STATUSES:
+                continue
+
             batch["current_index"] = index
-            item["status"] = "RUNNING"
-            item["started_at"] = datetime.now(timezone.utc).isoformat()
 
-            try:
-                run_entry = await trigger_run(
-                    item["server"],
-                    batch["dispatch_agent"],
-                    item["reglimit"],
-                    1,
-                    triggered_by=f"batch:{batch_id}",
-                    dispatch_agent_id=batch.get("dispatch_agent_id"),
-                )
-            except Exception as exc:
-                logger.error("Batch %s: launch failed for %s: %s", batch_id, item["server"], exc)
-                item["status"] = "LAUNCH_FAILED"
-                item["error"] = str(exc)
-                item["finished_at"] = datetime.now(timezone.utc).isoformat()
-                continue
+            # Resuming an item that was already in flight: ask whether its own
+            # run actually landed on the box. Only skip the launch when the
+            # answer is a definite yes — anything else (never landed) falls
+            # through and launches under the same pre-assigned run_id, and an
+            # unreachable server raises rather than guessing.
+            needs_launch = True
+            if item["status"] == "RUNNING" and item.get("run_id"):
+                try:
+                    if await _remote_run_exists(item["server"], item["run_id"]):
+                        logger.info(
+                            "Batch %s: re-attaching to run %s on %s",
+                            batch_id, item["run_id"], item["server"],
+                        )
+                        needs_launch = False
+                    else:
+                        logger.info(
+                            "Batch %s: run %s never landed on %s, launching it",
+                            batch_id, item["run_id"], item["server"],
+                        )
+                except Exception as exc:
+                    logger.error("Batch %s: cannot resolve %s: %s", batch_id, item["server"], exc)
+                    item["status"] = "LAUNCH_FAILED"
+                    item["error"] = str(exc)
+                    item["finished_at"] = datetime.now(timezone.utc).isoformat()
+                    _save_batch_state()
+                    continue
 
-            item["run_id"] = run_entry["run_id"]
+            if needs_launch:
+                # run_id is assigned and persisted BEFORE the launch, so if the
+                # dashboard dies mid-launch the resumed batch still knows which
+                # run to look for (see _remote_run_exists).
+                item["status"] = "RUNNING"
+                item["run_id"] = item.get("run_id") or f"{item['server']}_{_make_run_id()}"
+                item["started_at"] = datetime.now(timezone.utc).isoformat()
+                _save_batch_state()
+                try:
+                    await trigger_run(
+                        item["server"],
+                        batch["dispatch_agent"],
+                        item["reglimit"],
+                        1,
+                        triggered_by=f"batch:{batch_id}",
+                        dispatch_agent_id=batch.get("dispatch_agent_id"),
+                        port_prefix=item.get("port_prefix"),
+                        run_id=item["run_id"],
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Batch %s: launch failed for %s: %s", batch_id, item["server"], exc
+                    )
+                    item["status"] = "LAUNCH_FAILED"
+                    item["error"] = str(exc)
+                    item["finished_at"] = datetime.now(timezone.utc).isoformat()
+                    _save_batch_state()
+                    continue
 
             while True:
                 if batch["status"] == "CANCELLING":
@@ -901,6 +1188,7 @@ async def _run_batch(batch_id: str) -> None:
                         )
                     item["status"] = "CANCELLED"
                     item["finished_at"] = datetime.now(timezone.utc).isoformat()
+                    _save_batch_state()
                     break
                 try:
                     log_data = await tail_log(item["server"], item["run_id"], lines=50)
@@ -918,9 +1206,61 @@ async def _run_batch(batch_id: str) -> None:
                     item["status"] = "DONE"
                     item["synced_uids"] = log_data.get("synced_uids", [])
                     item["finished_at"] = datetime.now(timezone.utc).isoformat()
+                    _save_batch_state()
                     break
                 await asyncio.sleep(BATCH_POLL_INTERVAL_SECONDS)
+    except asyncio.CancelledError:
+        # The dashboard is shutting down mid-queue. Deliberately leave the
+        # batch marked RUNNING on disk: writing a "DONE" here would record a
+        # completion that never happened and stop the next startup from
+        # resuming the items still waiting to launch.
+        interrupted = True
+        logger.info("Batch %s: interrupted by shutdown, state left for resume", batch_id)
+        raise
     finally:
-        batch["status"] = "CANCELLED" if batch["status"] == "CANCELLING" else "DONE"
-        batch["finished_at"] = datetime.now(timezone.utc).isoformat()
+        if not interrupted:
+            if batch["status"] == "CANCELLING":
+                batch["status"] = "CANCELLED"
+            else:
+                # A batch where nothing ever launched is a failure, not a
+                # completion. Reporting DONE there reads as "everything
+                # registered" while in fact nothing did — which is exactly how
+                # a broken run79.sh template looked on 2026-08-03: HTTP 200,
+                # every item LAUNCH_FAILED, batch "DONE", zero registrations.
+                succeeded = sum(1 for i in batch["queue"] if i["status"] == "DONE")
+                batch["status"] = "DONE" if succeeded else "FAILED"
+            batch["finished_at"] = datetime.now(timezone.utc).isoformat()
         _batch_tasks.pop(batch_id, None)
+        _save_batch_state()
+
+
+async def resume_interrupted_batches() -> Dict[str, Any]:
+    """Called once on dashboard startup: reload persisted batches and restart
+    the orchestrator for any that were still running when the process died.
+    Items already DONE are left alone and in-flight ones are re-attached to,
+    so resuming never re-registers anything (see _run_batch)."""
+    if not os.path.isfile(BATCH_STATE_PATH):
+        return {"resumed": []}
+    try:
+        with open(BATCH_STATE_PATH, encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not read persisted batch state: %s", exc)
+        return {"resumed": []}
+
+    resumed: List[str] = []
+    for batch in saved.get("batches", []):
+        batch_id = batch.get("batch_id")
+        if not batch_id:
+            continue
+        _active_batches[batch_id] = batch
+        if batch.get("status") in ("RUNNING", "CANCELLING"):
+            pending = sum(1 for i in batch["queue"] if i["status"] == "PENDING")
+            in_flight = sum(1 for i in batch["queue"] if i["status"] == "RUNNING")
+            logger.info(
+                "Resuming batch %s after restart: %d pending, %d in flight",
+                batch_id, pending, in_flight,
+            )
+            _batch_tasks[batch_id] = asyncio.create_task(_run_batch(batch_id))
+            resumed.append(batch_id)
+    return {"resumed": resumed}

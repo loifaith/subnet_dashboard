@@ -192,6 +192,110 @@
       html.theme-dark .subnet-reg-cost-value {
         color: #7dd3fc;
       }
+      /* Alpha price stat tile: current value + delta + sparkline. Shares the
+         reg-cost chip's frame so the header reads as one row of chips. */
+      .alpha-price-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 4px 12px;
+        border-radius: 8px;
+        background: rgba(13, 110, 253, 0.08);
+        border: 1px solid rgba(13, 110, 253, 0.18);
+        white-space: nowrap;
+      }
+      html.theme-dark .alpha-price-card {
+        background: rgba(56, 189, 248, 0.08);
+        border-color: rgba(56, 189, 248, 0.22);
+      }
+      .alpha-price-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .alpha-price-label {
+        font-size: 0.78rem;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      html.theme-dark .alpha-price-label {
+        color: #94a3b8;
+      }
+      .alpha-price-value {
+        font-family: monospace;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #0d6efd;
+        font-variant-numeric: tabular-nums;
+      }
+      html.theme-dark .alpha-price-value {
+        color: #7dd3fc;
+      }
+      /* Status colors, fixed across themes; both clear 3:1 on either surface.
+         Always paired with a caret icon and the number, so direction is never
+         carried by hue alone. */
+      .alpha-price-delta {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .alpha-price-delta.up {
+        color: #0ca30c;
+      }
+      .alpha-price-delta.down {
+        color: #d03b3b;
+      }
+      .alpha-price-delta.flat {
+        color: #6c757d;
+      }
+      html.theme-dark .alpha-price-delta.flat {
+        color: #94a3b8;
+      }
+      .alpha-price-spark {
+        position: relative;
+        width: 132px;
+        height: 34px;
+        flex: none;
+      }
+      .alpha-price-ranges {
+        display: flex;
+        gap: 2px;
+      }
+      .alpha-price-ranges button {
+        border: none;
+        background: transparent;
+        color: #6c757d;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        padding: 2px 5px;
+        border-radius: 4px;
+        cursor: pointer;
+        line-height: 1.3;
+      }
+      .alpha-price-ranges button:hover {
+        background: rgba(13, 110, 253, 0.12);
+        color: #0d6efd;
+      }
+      .alpha-price-ranges button.active {
+        background: #0d6efd;
+        color: #fff;
+      }
+      html.theme-dark .alpha-price-ranges button {
+        color: #94a3b8;
+      }
+      html.theme-dark .alpha-price-ranges button:hover {
+        background: rgba(56, 189, 248, 0.16);
+        color: #7dd3fc;
+      }
+      html.theme-dark .alpha-price-ranges button.active {
+        background: #0284c7;
+        color: #fff;
+      }
       .page-title {
         font-size: 1.8rem;
         font-weight: 600;
@@ -593,6 +697,65 @@
       .regbot-unreachable-note {
         font-size: 0.75rem;
         color: #dc3545;
+      }
+      .batch-active-bar {
+        padding: 8px 24px;
+        border-bottom: 1px solid #dee2e6;
+        background: #eef4ff;
+      }
+      html.theme-dark .batch-active-bar {
+        background: #16233a;
+        border-bottom-color: #374151;
+      }
+      .batch-run-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #fff;
+        border: 1px solid #0d6efd;
+        font-size: 0.78rem;
+        cursor: pointer;
+        color: #333;
+        max-width: 520px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .batch-run-pill:hover {
+        background: #dbeafe;
+      }
+      html.theme-dark .batch-run-pill {
+        background: #111827;
+        border-color: #1e3a8a;
+        color: #e5e7eb;
+      }
+      html.theme-dark .batch-run-pill:hover {
+        background: #1e293b;
+      }
+      .batch-pulse-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #0d6efd;
+        flex-shrink: 0;
+        animation: regbot-pulse 1.5s ease-in-out infinite;
+      }
+      .batch-progress-track {
+        width: 60px;
+        height: 5px;
+        border-radius: 999px;
+        background: #dee2e6;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      html.theme-dark .batch-progress-track {
+        background: #334155;
+      }
+      .batch-progress-fill {
+        height: 100%;
+        background: #0d6efd;
       }
       .unstake-active-bar {
         padding: 8px 24px;
@@ -1765,6 +1928,38 @@
             <span class="subnet-reg-cost-label">Sim</span>
             <span class="subnet-reg-cost-value" id="subnetSimIdValue">—</span>
           </div>
+          <div
+            id="alphaPriceCard"
+            class="alpha-price-card"
+            style="display: none"
+            role="group"
+            aria-label="Alpha price"
+          >
+            <div class="alpha-price-head">
+              <span class="alpha-price-label" id="alphaPriceLabel">α price</span>
+              <span class="alpha-price-value" id="alphaPriceValue">—</span>
+              <span class="alpha-price-delta flat" id="alphaPriceDelta"></span>
+            </div>
+            <div class="alpha-price-spark">
+              <canvas
+                id="alphaPriceChart"
+                role="img"
+                aria-label="Alpha price trend"
+              ></canvas>
+            </div>
+            <div
+              class="alpha-price-ranges"
+              id="alphaPriceRanges"
+              role="group"
+              aria-label="Alpha price time range"
+            >
+              <button type="button" data-range="24h">24H</button>
+              <button type="button" data-range="7d" class="active">7D</button>
+              <button type="button" data-range="30d">30D</button>
+              <button type="button" data-range="90d">90D</button>
+              <button type="button" data-range="all">ALL</button>
+            </div>
+          </div>
         </div>
         <div style="display: flex; align-items: center; gap: 10px">
           <div class="theme-toggle">
@@ -1822,10 +2017,26 @@
           >
             <i class="bi bi-list-ol"></i> Multi-Server Unstake
           </button>
+          <button
+            type="button"
+            class="btn btn-outline-info btn-sm position-relative"
+            onclick="openColdkeysModal()"
+            id="coldkeysBtn"
+          >
+            <i class="bi bi-key"></i> Coldkeys
+            <span
+              id="coldkeysBadge"
+              class="badge rounded-pill bg-danger"
+              style="display: none; margin-left: 4px"
+            ></span>
+          </button>
         </div>
       </div>
       <div id="regbotActiveBar" class="regbot-active-bar" style="display: none">
         <div class="regbot-active-bar-inner" id="regbotActiveBarInner"></div>
+      </div>
+      <div id="batchActiveBar" class="batch-active-bar" style="display: none">
+        <div class="regbot-active-bar-inner" id="batchActiveBarInner"></div>
       </div>
       <div
         id="unstakeActiveBar"
@@ -2492,6 +2703,7 @@
                   onchange="
                     updateAddMinerEstimate();
                     loadRegBotServerBalance();
+                    applyAddMinerDefaultPortPrefix();
                   "
                 >
                   <option value="">Loading servers…</option>
@@ -2547,6 +2759,23 @@
                     step="1"
                     oninput="updateAddMinerEstimate()"
                   />
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label" for="addMinerPortPrefix"
+                  >Axon Port Band
+                  <span class="text-muted">(optional)</span></label
+                >
+                <input
+                  type="text"
+                  class="form-control"
+                  id="addMinerPortPrefix"
+                  placeholder="79XX"
+                />
+                <div class="regbot-hint" style="font-size: 0.8rem">
+                  X is a wildcard digit — 79XX = 7900-7999, 809X = 8090-8099.
+                  Comma-separate to spill into later bands (809X,808X). Leave
+                  blank to use the server's default band.
                 </div>
               </div>
               <div
@@ -2767,7 +2996,10 @@
                 <select
                   class="form-select"
                   id="unstakeServer"
-                  onchange="onUnstakeInputsChanged()"
+                  onchange="
+                    applyUnstakeDefaultDestination();
+                    onUnstakeInputsChanged();
+                  "
                 ></select>
               </div>
               <div class="mb-3">
@@ -2777,11 +3009,14 @@
                   id="unstakeMode"
                   onchange="onUnstakeModeChanged()"
                 >
-                  <option value="unstake_transfer">
-                    Unstake &amp; Transfer — sweep to another address
-                  </option>
-                  <option value="unstake">
+                  <option value="unstake" selected>
                     Unstake only — leave TAO as free balance on this coldkey
+                  </option>
+                  <option value="unstake_transfer">
+                    Unstake &amp; Transfer — unstake, then sweep to an address
+                  </option>
+                  <option value="transfer">
+                    Transfer only — sweep existing free balance, no unstake
                   </option>
                 </select>
               </div>
@@ -2796,6 +3031,23 @@
                   placeholder="5..."
                   oninput="onUnstakeInputsChanged()"
                 />
+                <div class="mt-3" id="unstakeAmountWrap" style="display: none">
+                  <label class="form-label" for="unstakeAmount"
+                    >Amount (τ)
+                    <span class="text-muted"
+                      >— blank sends the whole free balance</span
+                    ></label
+                  >
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="unstakeAmount"
+                    min="0"
+                    step="0.0001"
+                    placeholder="whole balance"
+                    oninput="onUnstakeInputsChanged()"
+                  />
+                </div>
                 <div class="regbot-hint" id="unstakeModeHint">
                   Unstakes every hotkey's stake above the dust threshold on
                   netuid 79 for this coldkey, then sweeps the resulting free
@@ -2971,6 +3223,11 @@
           </div>
           <div class="modal-body">
             <div id="multiRegisterFormSection">
+              <div
+                id="multiRegisterActiveNote"
+                class="alert alert-info py-2 px-3 mb-3"
+                style="display: none; font-size: 0.85rem"
+              ></div>
               <div class="regbot-hint mb-3">
                 Registers hotkeys across several servers in strict round-robin
                 order — one attempt at a time (e.g. 3 on Server1, 2 on Server2
@@ -2996,8 +3253,9 @@
                     <tr>
                       <th>Server</th>
                       <th>Balance</th>
-                      <th style="width: 110px">Count</th>
-                      <th style="width: 140px">Reg Limit (τ)</th>
+                      <th style="width: 90px">Count</th>
+                      <th style="width: 120px">Reg Limit (τ)</th>
+                      <th style="width: 120px">Port Band</th>
                     </tr>
                   </thead>
                   <tbody id="multiRegisterServerRows"></tbody>
@@ -3027,6 +3285,7 @@
                       <th style="width: 40px">#</th>
                       <th>Server</th>
                       <th style="width: 90px">Reg Limit</th>
+                      <th style="width: 90px">Port Band</th>
                       <th>Status</th>
                       <th>Detail</th>
                     </tr>
@@ -3037,6 +3296,15 @@
             </div>
           </div>
           <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm"
+              id="multiRegisterNewBatchBtn"
+              onclick="backToMultiRegisterForm()"
+              style="display: none"
+            >
+              <i class="bi bi-plus-circle"></i> New Batch
+            </button>
             <button
               type="button"
               class="btn btn-outline-danger btn-sm"
@@ -3211,12 +3479,16 @@
                   id="multiUnstakeMode"
                   onchange="onMultiUnstakeModeChanged()"
                 >
-                  <option value="unstake_transfer">
-                    Unstake &amp; Transfer — sweep each coldkey to its own
-                    destination
-                  </option>
-                  <option value="unstake">
+                  <option value="unstake" selected>
                     Unstake only — leave TAO as free balance on each coldkey
+                  </option>
+                  <option value="unstake_transfer">
+                    Unstake &amp; Transfer — unstake, then sweep each coldkey to
+                    its own destination
+                  </option>
+                  <option value="transfer">
+                    Transfer only — sweep each coldkey's existing free balance,
+                    no unstake
                   </option>
                 </select>
               </div>
@@ -3236,9 +3508,12 @@
                       <th>Staked</th>
                       <th
                         id="multiUnstakeDestinationHeader"
-                        style="width: 260px"
+                        style="width: 240px"
                       >
                         Destination
+                      </th>
+                      <th id="multiUnstakeAmountHeader" style="width: 120px">
+                        Amount (τ)
                       </th>
                     </tr>
                   </thead>
@@ -3357,6 +3632,61 @@
     </div>
 
     <div
+      class="modal fade"
+      id="coldkeysModal"
+      tabindex="-1"
+      aria-labelledby="coldkeysModalTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="coldkeysModalTitle">
+              <i class="bi bi-key"></i> Coldkeys &amp; IPs Watch
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="regbot-hint mb-3">
+              Checks the
+              <span id="coldkeysNetuidLabel">configured subnet's</span>
+              metagraph every hour for coldkeys/IPs never seen before, and lists
+              whatever the most recent check found. The subnet comes from
+              <code>79Miners/Coldkeys/settings.json</code>.
+            </div>
+            <div id="coldkeysSummaryLine" class="mb-3"></div>
+            <div class="mb-2" style="font-weight: 600">New coldkeys</div>
+            <div id="coldkeysNewColdkeysList" class="mb-3"></div>
+            <div class="mb-2" style="font-weight: 600">New IPs</div>
+            <div id="coldkeysNewIpsList"></div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-outline-primary btn-sm"
+              id="coldkeysRefreshBtn"
+              onclick="refreshColdkeysNow()"
+            >
+              <i class="bi bi-arrow-clockwise"></i> Check Now
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
       id="notifyToastContainer"
       class="notify-toast-container"
       aria-live="polite"
@@ -3458,6 +3788,8 @@
         "5FHovibREhLYEFPSyZW9sAZdiQ4RBpRXVoFrunqtnb8fw27v",
         "5DAwDVmueCsMUVa5ko9H1Mpgoa36jQW44jUqCX7yEi4tGqaa",
         "5HVnS4HmuPaepAnNzA2aXUf96SPDXceV3PugqG7Stsh8eErG",
+        "5CnwHCF9JChi5JC2bJzC3KtsDRWBEyrdcGZ3KUVbTxjvEdpW",
+        "5HeRKBo2NLScWGn5sd98ThmpJSAqTHjo21ae2S8simH5w1rJ",
         "5DX4KnN1Js3ufjWKcMMqzjGwHjKgQn9Js7jmC2xxaeFupX5o",
       ];
       let registeredColdkeys = [];
@@ -3498,6 +3830,8 @@
         "88.216.195.45": "Server8",
         "65.109.104.253": "Server9",
         "65.108.0.181": "Server10",
+        "65.21.129.168": "Server11",
+        "135.181.138.51": "Server12",
       };
       var COLDKEY_NICKNAMES = {
         "5HdegbzgYQ26ZfsqBLx7o54uwFQzLRPwkBe2S6JM2aNVpCj5": "b005",
@@ -3511,6 +3845,8 @@
         "5DD45SAecKmhpyn9TykNoZWnc7mFgBrhvwmYNC6XSN2Ron6R": "b002",
         "5Fnwngtt7bm5Nm8zTrXeELgG88M1cDBkJzaewdDghkLfgnXW": "b003",
         "5G96Vc7YqepyNNZi6dWqzpzQJtQxcZFdysC7Cp15ZgrTfhXf": "w005",
+        "5CnwHCF9JChi5JC2bJzC3KtsDRWBEyrdcGZ3KUVbTxjvEdpW": "k001",
+        "5HeRKBo2NLScWGn5sd98ThmpJSAqTHjo21ae2S8simH5w1rJ": "k002",
       };
       function getColdkeyNickname(ck) {
         return ck && COLDKEY_NICKNAMES[ck] ? COLDKEY_NICKNAMES[ck] : null;
@@ -3569,6 +3905,9 @@
         } catch (e) {}
         agentColors = {};
         if (minersArray.length > 0) renderTable();
+        // Chart.js bakes colors in at construction time, so the sparkline has to
+        // be rebuilt for the new surface rather than just restyled by CSS.
+        if (alphaPriceData) renderAlphaPriceChart(alphaPriceData);
       }
       document.addEventListener("DOMContentLoaded", function () {
         setTheme(getStoredTheme());
@@ -3590,13 +3929,35 @@
               } catch (e) {}
               setTheme("dark");
             });
+        var alphaRangeWrap = document.getElementById("alphaPriceRanges");
+        if (alphaRangeWrap)
+          alphaRangeWrap.addEventListener("click", function (e) {
+            var btn = e.target.closest("button[data-range]");
+            if (!btn) return;
+            Array.prototype.forEach.call(
+              alphaRangeWrap.querySelectorAll("button[data-range]"),
+              function (b) {
+                b.classList.toggle("active", b === btn);
+              }
+            );
+            loadAlphaPrice(btn.getAttribute("data-range"));
+          });
         loadColdkeys();
         loadData();
         setInterval(loadData, 5 * 60 * 1000);
         loadRegBotActiveRuns();
         regbotActiveTimer = setInterval(loadRegBotActiveRuns, 20000);
+        loadBatchActiveRuns();
+        batchActiveTimer = setInterval(loadBatchActiveRuns, 15000);
         loadUnstakeActiveRuns();
         unstakeActiveTimer = setInterval(loadUnstakeActiveRuns, 20000);
+        loadColdkeysSummary(false);
+        setInterval(
+          function () {
+            loadColdkeysSummary(false);
+          },
+          5 * 60 * 1000,
+        );
         var currentNetuid = getSubnetFromInput();
         [71, 79, 88].forEach(function (n) {
           if (n !== currentNetuid) fetchSubnetEmissionBackground(n);
@@ -4093,7 +4454,10 @@
             }
             return tail
               .then(function () {
-                return loadSubnetRegCost(forceRefresh);
+                return Promise.all([
+                  loadSubnetRegCost(forceRefresh),
+                  loadAlphaPrice(),
+                ]);
               })
               .then(afterLoad);
           })
@@ -4882,6 +5246,14 @@
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;");
+      }
+
+      // creg79.py and unstake_env.py colour their output, so log lines pulled
+      // into the UI carry raw ANSI escapes ("[31m0.12τ[0m") that
+      // render as literal "[31m" noise in a tooltip or table cell.
+      function stripAnsi(text) {
+        // eslint-disable-next-line no-control-regex
+        return String(text == null ? "" : text).replace(/\[[0-9;]*m/g, "");
       }
 
       function setMinerParamsStatus(message, type) {
@@ -7026,6 +7398,7 @@
         var showSn88Columns = netuid === 88;
         if (!showSn79Columns) hideFeeRegimePanel();
         if (typeof loadRegBotActiveRuns === "function") loadRegBotActiveRuns();
+        if (typeof loadBatchActiveRuns === "function") loadBatchActiveRuns();
         if (typeof loadUnstakeActiveRuns === "function")
           loadUnstakeActiveRuns();
         var sn79Headers = [
@@ -7284,6 +7657,222 @@
             console.warn("Failed to load subnet reg cost:", err);
             if (getSubnetFromInput() === netuid)
               renderSubnetRegCost(null, netuid);
+          });
+      }
+
+      // ---- Alpha price sparkline (header) ----------------------------------
+      var alphaPriceChart = null;
+      var alphaPriceRange = "7d";
+      var alphaPriceData = null; // kept so a theme switch can repaint the chart
+
+      function formatAlphaPrice(v) {
+        if (v == null) return "—";
+        var n = Number(v);
+        if (!isFinite(n)) return "—";
+        if (n >= 1) return n.toFixed(4);
+        if (n >= 0.01) return n.toFixed(5);
+        return n.toFixed(6);
+      }
+
+      function alphaPriceDirection(changePct) {
+        if (changePct == null || !isFinite(changePct)) return "flat";
+        // Below this the delta renders as "0.00%", so calling it up or down
+        // would contradict the number printed next to the caret.
+        if (changePct > 0.005) return "up";
+        if (changePct < -0.005) return "down";
+        return "flat";
+      }
+
+      function alphaPriceLineColor(direction, isDark) {
+        if (direction === "up") return "#0ca30c";
+        if (direction === "down") return "#d03b3b";
+        return isDark ? "#94a3b8" : "#6c757d";
+      }
+
+      function alphaPriceRgba(hex, alpha) {
+        var n = parseInt(hex.slice(1), 16);
+        return (
+          "rgba(" +
+          ((n >> 16) & 255) +
+          "," +
+          ((n >> 8) & 255) +
+          "," +
+          (n & 255) +
+          "," +
+          alpha +
+          ")"
+        );
+      }
+
+      function renderAlphaPriceChart(data) {
+        var canvas = document.getElementById("alphaPriceChart");
+        if (!canvas || typeof Chart === "undefined") return;
+        if (alphaPriceChart) {
+          alphaPriceChart.destroy();
+          alphaPriceChart = null;
+        }
+        if (!data || !data.points || data.points.length < 2) return;
+
+        var isDark = document.documentElement.classList.contains("theme-dark");
+        var line = alphaPriceLineColor(
+          alphaPriceDirection(data.change_pct),
+          isDark
+        );
+        var ctx = canvas.getContext("2d");
+        var fill = ctx.createLinearGradient(0, 0, 0, 34);
+        fill.addColorStop(0, alphaPriceRgba(line, 0.26));
+        fill.addColorStop(1, alphaPriceRgba(line, 0.02));
+
+        alphaPriceChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: data.points.map(function (p) {
+              return p[0];
+            }),
+            datasets: [
+              {
+                data: data.points.map(function (p) {
+                  return p[1];
+                }),
+                borderColor: line,
+                backgroundColor: fill,
+                borderWidth: 2,
+                fill: true,
+                // No smoothing: a curve through hourly closes draws prices that
+                // never traded, including false intermediate highs and lows.
+                tension: 0,
+                pointRadius: 0,
+                pointHoverRadius: 3.5,
+                pointHoverBackgroundColor: line,
+                // 2px ring in the surface color so the hovered point stays
+                // legible where it sits on top of the filled area.
+                pointHoverBorderColor: isDark ? "#1e293b" : "#ffffff",
+                pointHoverBorderWidth: 2,
+                // Hit target far bigger than the mark — the sparkline is 34px tall.
+                pointHitRadius: 14,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            layout: { padding: { top: 3, bottom: 3 } },
+            // Nearest-x rather than nearest-point: hovering anywhere in the
+            // column reads that hour, which is the crosshair behaviour.
+            interaction: { mode: "index", intersect: false },
+            scales: {
+              x: { display: false },
+              y: { display: false, grace: "6%" },
+            },
+            plugins: {
+              // One series, already named by the chip's label.
+              legend: { display: false },
+              tooltip: {
+                displayColors: false,
+                backgroundColor: isDark
+                  ? "rgba(15,23,42,0.95)"
+                  : "rgba(33,37,41,0.95)",
+                titleFont: { size: 11, weight: "normal" },
+                bodyFont: { size: 12, family: "monospace" },
+                padding: 8,
+                callbacks: {
+                  title: function (items) {
+                    return items.length ? items[0].label : "";
+                  },
+                  label: function (item) {
+                    return formatAlphaPrice(item.parsed.y) + " τ";
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      function renderAlphaPrice(data, netuid) {
+        var card = document.getElementById("alphaPriceCard");
+        var labelEl = document.getElementById("alphaPriceLabel");
+        var valueEl = document.getElementById("alphaPriceValue");
+        var deltaEl = document.getElementById("alphaPriceDelta");
+        if (!card || !valueEl || !deltaEl) return;
+
+        if (!data) {
+          card.style.display = "none";
+          if (alphaPriceChart) {
+            alphaPriceChart.destroy();
+            alphaPriceChart = null;
+          }
+          return;
+        }
+
+        card.style.display = "";
+        if (labelEl) labelEl.textContent = "SN" + netuid + " α";
+        valueEl.textContent = formatAlphaPrice(data.current) + " τ";
+
+        var dir = alphaPriceDirection(data.change_pct);
+        deltaEl.className = "alpha-price-delta " + dir;
+        var icon =
+          dir === "up"
+            ? "bi-caret-up-fill"
+            : dir === "down"
+              ? "bi-caret-down-fill"
+              : "bi-dash";
+        var pct =
+          data.change_pct == null
+            ? "—"
+            : (data.change_pct >= 0 ? "+" : "") +
+              Number(data.change_pct).toFixed(2) +
+              "%";
+        deltaEl.innerHTML = '<i class="bi ' + icon + '"></i>' + pct;
+
+        var title =
+          (data.name ? data.name + " " : "") +
+          "alpha price · " +
+          data.range +
+          "\nhigh " +
+          formatAlphaPrice(data.high) +
+          " τ · low " +
+          formatAlphaPrice(data.low) +
+          " τ";
+        if (data.period_start && data.period_end)
+          title += "\n" + data.period_start + " → " + data.period_end;
+        if (data.updated_at)
+          title +=
+            "\nsource updated " +
+            new Date(data.updated_at).toLocaleString();
+        card.title = title;
+
+        renderAlphaPriceChart(data);
+      }
+
+      function loadAlphaPrice(range) {
+        if (range) alphaPriceRange = range;
+        var netuid = getSubnetFromInput();
+        var url =
+          "/api/alpha-price?netuid=" +
+          netuid +
+          "&range=" +
+          encodeURIComponent(alphaPriceRange);
+        return fetch(url)
+          .then(function (r) {
+            // 404 just means this subnet has no history file — hide the chip
+            // rather than showing an error for it.
+            if (r.status === 404) return null;
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(function (data) {
+            if (getSubnetFromInput() !== netuid) return;
+            alphaPriceData = data;
+            renderAlphaPrice(data, netuid);
+          })
+          .catch(function (err) {
+            console.warn("Failed to load alpha price:", err);
+            if (getSubnetFromInput() === netuid) {
+              alphaPriceData = null;
+              renderAlphaPrice(null, netuid);
+            }
           });
       }
 
@@ -7852,6 +8441,37 @@
         URL.revokeObjectURL(a.href);
       }
 
+      // ---- Axon port band (creg79.py --port-prefix) ----
+      // Mirrors regbot.py's PORT_PREFIX_RE so a bad pattern is caught before a
+      // round trip; the server still re-validates (it's what feeds the shell).
+      var PORT_PREFIX_RE = /^[0-9X]{1,4}(,[0-9X]{1,4})*$/;
+      var PORT_PREFIX_HINT =
+        "Port band must be digits with X as a wildcard digit, e.g. 79XX or " +
+        "809X — comma-separate for multiple bands (809X,808X).";
+
+      function isValidPortPrefix(value) {
+        return PORT_PREFIX_RE.test(value);
+      }
+
+      function defaultPortPrefixFor(serverName) {
+        if (!regbotPresetsCache || !serverName) return "";
+        var match = regbotPresetsCache.servers.filter(function (s) {
+          return s.name === serverName;
+        })[0];
+        return (match && match.port_prefix) || "";
+      }
+
+      // Re-fills the band whenever the selected server changes. Overwriting is
+      // intended: the band is a property of the server, so a value left over
+      // from a previously-selected server is always wrong for the new one.
+      function applyAddMinerDefaultPortPrefix() {
+        var el = document.getElementById("addMinerPortPrefix");
+        if (el)
+          el.value = defaultPortPrefixFor(
+            document.getElementById("addMinerServer").value,
+          );
+      }
+
       // ---- Add Miner (RegBot) ----
       var regbotPresetsCache = null;
       var addMinerLogTimer = null;
@@ -7951,6 +8571,7 @@
         document.getElementById("addMinerFormError").style.display = "none";
         document.getElementById("addMinerLog").textContent = "";
         document.getElementById("addMinerSyncStatus").style.display = "none";
+        document.getElementById("addMinerPortPrefix").value = "";
         addMinerCurrentRun = null;
         addMinerPendingParams = null;
         addMinerServerBalance = null;
@@ -8054,6 +8675,7 @@
             populateAddMinerForm(data);
             updateAddMinerEstimate();
             loadRegBotServerBalance();
+            applyAddMinerDefaultPortPrefix();
           })
           .catch(function (err) {
             document.getElementById("addMinerFormError").style.display = "";
@@ -8092,6 +8714,15 @@
           return;
         }
 
+        var portPrefix = document
+          .getElementById("addMinerPortPrefix")
+          .value.trim();
+        if (portPrefix && !isValidPortPrefix(portPrefix)) {
+          errEl.style.display = "";
+          errEl.textContent = PORT_PREFIX_HINT;
+          return;
+        }
+
         var serverSel = document.getElementById("addMinerServer");
         var serverLabel = serverSel.options[serverSel.selectedIndex].text;
         addMinerPendingParams = {
@@ -8101,6 +8732,7 @@
           dispatchAgentLabel: agentEntry.label,
           reglimit: reglimit,
           maxCount: maxCount,
+          portPrefix: portPrefix || null,
           serverLabel: serverLabel,
         };
 
@@ -8117,6 +8749,9 @@
           "<div><strong>Max Count:</strong> " +
           maxCount +
           " hotkey(s)</div>" +
+          "<div><strong>Port Band:</strong> " +
+          (portPrefix ? escapeHtml(portPrefix) : "server default") +
+          "</div>" +
           "<div class='mt-2'><strong>Max spend: τ " +
           (reglimit * maxCount).toFixed(4) +
           "</strong></div>" +
@@ -8155,6 +8790,7 @@
         var dispatchAgentId = addMinerPendingParams.dispatchAgentId;
         var reglimit = addMinerPendingParams.reglimit;
         var maxCount = addMinerPendingParams.maxCount;
+        var portPrefix = addMinerPendingParams.portPrefix;
         addMinerPendingParams = null;
 
         var confirmModalEl = document.getElementById("regbotConfirmModal");
@@ -8188,6 +8824,7 @@
             dispatch_agent_id: dispatchAgentId,
             reglimit: reglimit,
             max_count: maxCount,
+            port_prefix: portPrefix,
           }),
         })
           .then(function (r) {
@@ -8416,6 +9053,18 @@
           });
       }
 
+      // "unstake_transfer" and "transfer" both move TAO off the coldkey and so
+      // both need a destination; "unstake" alone does not.
+      function modeNeedsDestination(mode) {
+        return mode === "unstake_transfer" || mode === "transfer";
+      }
+
+      function modeLabel(mode) {
+        if (mode === "unstake_transfer") return "Unstake & Transfer";
+        if (mode === "transfer") return "Transfer only";
+        return "Unstake only";
+      }
+
       // ---- Unstake & Transfer ----
       var unstakePresetsCache = null;
       var unstakePendingRun = null; // { server, destination }
@@ -8462,6 +9111,7 @@
             );
           })
           .join("");
+        applyUnstakeDefaultDestination();
         updateUnstakeRunEnabled();
       }
 
@@ -8471,8 +9121,9 @@
         document.getElementById("unstakeFormError").style.display = "none";
         document.getElementById("unstakePreviewWrap").style.display = "none";
         document.getElementById("unstakePreviewOutput").textContent = "";
-        document.getElementById("unstakeMode").value = "unstake_transfer";
+        document.getElementById("unstakeMode").value = "unstake";
         document.getElementById("unstakeDestination").value = "";
+        document.getElementById("unstakeAmount").value = "";
         document.getElementById("unstakeRunBtn").style.display = "";
         document.getElementById("unstakeProgressWrap").style.display = "none";
         document.getElementById("unstakeResultSummary").textContent = "";
@@ -8501,21 +9152,60 @@
         ).show();
       }
 
+      // Each coldkey sweeps to its own destination by default (see
+      // DEFAULT_DESTINATIONS in unstake.py). Overwriting on server change is
+      // intended — a destination left over from another coldkey would send
+      // that wallet's TAO to the wrong place.
+      function applyUnstakeDefaultDestination() {
+        var el = document.getElementById("unstakeDestination");
+        if (!el || !unstakePresetsCache) return;
+        var server = document.getElementById("unstakeServer").value;
+        var match = unstakePresetsCache.servers.filter(function (s) {
+          return s.name === server;
+        })[0];
+        el.value = (match && match.default_destination) || "";
+      }
+
       function applyUnstakeModeVisibility() {
         var mode = document.getElementById("unstakeMode").value;
-        var isTransfer = mode === "unstake_transfer";
+        var isTransfer = modeNeedsDestination(mode);
         document.getElementById("unstakeDestinationWrap").style.display =
           isTransfer ? "" : "none";
-        document.getElementById("unstakeModeHint").textContent = isTransfer
-          ? "Unstakes every hotkey's stake above the dust threshold on " +
+        // Amount is transfer-only: with unstake_transfer the point is to sweep
+        // whatever the unstake just freed, which isn't known up front.
+        document.getElementById("unstakeAmountWrap").style.display =
+          mode === "transfer" ? "" : "none";
+        var hint;
+        if (mode === "transfer") {
+          hint =
+            "Sends TAO that is ALREADY free on this coldkey — no unstaking " +
+            "happens. Leave Amount blank to send the whole free balance " +
+            "(minus a small fee reserve). Real, irreversible TAO movement — " +
+            "use Preview to see what would happen first.";
+        } else if (mode === "unstake_transfer") {
+          hint =
+            "Unstakes every hotkey's stake above the dust threshold on " +
             "netuid 79 for this coldkey, then sweeps the resulting free " +
             "balance to this address. Real, irreversible TAO movement — " +
-            "use Preview to see what would happen first."
-          : "Unstakes every hotkey's stake above the dust threshold on " +
+            "use Preview to see what would happen first.";
+        } else {
+          hint =
+            "Unstakes every hotkey's stake above the dust threshold on " +
             "netuid 79 for this coldkey. The freed TAO stays as free " +
             "balance on this same coldkey — nothing is sent anywhere. " +
             "Real, irreversible on-chain action — use Preview to see what " +
             "would happen first.";
+        }
+        document.getElementById("unstakeModeHint").textContent = hint;
+      }
+
+      // Blank = sweep everything (unstake_env.py's own default). Anything
+      // present must be a positive number.
+      function unstakeAmountValue() {
+        var raw = (document.getElementById("unstakeAmount").value || "").trim();
+        if (!raw) return null;
+        var n = parseFloat(raw);
+        return isNaN(n) ? NaN : n;
       }
 
       function onUnstakeModeChanged() {
@@ -8550,12 +9240,11 @@
         var errEl = document.getElementById("unstakeFormError");
         errEl.style.display = "none";
 
-        if (!server || (mode === "unstake_transfer" && !destination)) {
+        if (!server || (modeNeedsDestination(mode) && !destination)) {
           errEl.style.display = "";
-          errEl.textContent =
-            mode === "unstake_transfer"
-              ? "Please select a server and enter a destination address."
-              : "Please select a server.";
+          errEl.textContent = modeNeedsDestination(mode)
+            ? "Please select a server and enter a destination address."
+            : "Please select a server.";
           return;
         }
 
@@ -8571,7 +9260,8 @@
           body: JSON.stringify({
             server: server,
             mode: mode,
-            destination: mode === "unstake_transfer" ? destination : null,
+            destination: modeNeedsDestination(mode) ? destination : null,
+            amount: mode === "transfer" ? unstakeAmountValue() : null,
           }),
         })
           .then(function (r) {
@@ -8604,11 +9294,21 @@
 
         var serverSel = document.getElementById("unstakeServer");
         var serverLabel = serverSel.options[serverSel.selectedIndex].text;
-        var isTransfer = mode === "unstake_transfer";
+        var isTransfer = modeNeedsDestination(mode);
+        var amount = mode === "transfer" ? unstakeAmountValue() : null;
+        var errEl = document.getElementById("unstakeFormError");
+        errEl.style.display = "none";
+        if (amount !== null && (isNaN(amount) || amount <= 0)) {
+          errEl.style.display = "";
+          errEl.textContent =
+            "Amount must be a positive number of TAO (or blank to send everything).";
+          return;
+        }
         unstakePendingRun = {
           server: server,
           mode: mode,
           destination: isTransfer ? destination : null,
+          amount: amount,
         };
 
         document.getElementById("unstakeConfirmDetails").innerHTML =
@@ -8616,11 +9316,18 @@
           escapeHtml(serverLabel) +
           "</div>" +
           "<div><strong>Action:</strong> " +
-          (isTransfer ? "Unstake &amp; Transfer" : "Unstake only") +
+          escapeHtml(modeLabel(mode)) +
           "</div>" +
           (isTransfer
             ? "<div><strong>Destination:</strong> " +
               escapeHtml(destination) +
+              "</div>"
+            : "") +
+          (mode === "transfer"
+            ? "<div><strong>Amount:</strong> " +
+              (amount === null
+                ? "whole free balance"
+                : "τ " + escapeHtml(String(amount))) +
               "</div>"
             : "");
 
@@ -8670,6 +9377,7 @@
             server: run.server,
             mode: run.mode,
             destination: run.destination,
+            amount: run.amount,
           }),
         })
           .then(function (r) {
@@ -8749,18 +9457,14 @@
               data.status !== "RUNNING" &&
               unstakeLastKnownStatus === "RUNNING"
             ) {
-              var actionLabel =
-                data.mode === "unstake_transfer"
-                  ? "Unstake & transfer"
-                  : "Unstake";
               showNotifyAlert(
-                actionLabel +
+                modeLabel(data.mode) +
                   (data.success
                     ? " complete"
                     : data.timed_out
                       ? " timed out"
                       : " failed"),
-                data.mode === "unstake_transfer"
+                modeNeedsDestination(data.mode)
                   ? data.server + " → " + data.destination
                   : data.server,
                 data.success ? "success" : "error",
@@ -8805,6 +9509,10 @@
         document.getElementById("multiRegisterStartBtn").style.display = "";
         document.getElementById("multiRegisterCancelBtn").style.display =
           "none";
+        document.getElementById("multiRegisterNewBatchBtn").style.display =
+          "none";
+        document.getElementById("multiRegisterActiveNote").style.display =
+          "none";
         multiRegisterPendingStart = null;
         multiRegisterActiveBatchId = null;
         if (multiRegisterPollTimer) {
@@ -8825,20 +9533,90 @@
             errEl.style.display = "";
             errEl.textContent = "Failed to load servers: " + err.message;
           });
-        // Resume showing progress if a batch was already running (e.g. the
-        // modal was closed and reopened, or the page was reloaded) — the
-        // batch itself is a server-side background task, independent of
-        // whether this modal happens to be open.
-        fetch("/api/regbot/batch/active")
+        // Several batches can run at once, so opening this modal must NOT
+        // hijack the view with whichever one happens to be running — that
+        // would make it impossible to start another. Show the form, and list
+        // anything already running as chips you can click to watch.
+        loadMultiRegisterActiveNote();
+      }
+
+      function loadMultiRegisterActiveNote() {
+        var note = document.getElementById("multiRegisterActiveNote");
+        return fetch("/api/regbot/batch/active")
           .then(function (r) {
             return r.json();
           })
           .then(function (data) {
-            if (data.batch && data.batch.status !== "DONE") {
-              showMultiRegisterProgress(data.batch);
+            var running = data.batches || (data.batch ? [data.batch] : []);
+            if (!running.length) {
+              note.style.display = "none";
+              return running;
             }
+            note.style.display = "";
+            note.innerHTML =
+              '<i class="bi bi-broadcast"></i> <strong>' +
+              running.length +
+              " batch" +
+              (running.length === 1 ? "" : "es") +
+              " already running</strong> — starting another runs them at the " +
+              "same time, including on shared servers. " +
+              running
+                .map(function (b) {
+                  var done = b.queue.filter(function (i) {
+                    return i.status === "DONE";
+                  }).length;
+                  return (
+                    '<a href="#" class="badge bg-primary text-decoration-none ms-1" ' +
+                    "onclick=\"viewMultiRegisterBatch('" +
+                    b.batch_id +
+                    "'); return false;\">" +
+                    escapeHtml(b.batch_id.replace("batch_", "")) +
+                    " (" +
+                    done +
+                    "/" +
+                    b.queue.length +
+                    ")</a>"
+                  );
+                })
+                .join("");
+            return running;
           })
-          .catch(function () {});
+          .catch(function () {
+            note.style.display = "none";
+            return [];
+          });
+      }
+
+      function viewMultiRegisterBatch(batchId) {
+        fetch("/api/regbot/batch/" + encodeURIComponent(batchId))
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(showMultiRegisterProgress)
+          .catch(function (err) {
+            showNotifyAlert("Could not load batch", err.message, "error", 6000);
+          });
+      }
+
+      // Back to the form from a progress view, so another batch can be started
+      // without closing the modal. The batch being watched keeps running —
+      // this only stops this client polling it.
+      function backToMultiRegisterForm() {
+        if (multiRegisterPollTimer) {
+          clearInterval(multiRegisterPollTimer);
+          multiRegisterPollTimer = null;
+        }
+        multiRegisterActiveBatchId = null;
+        document.getElementById("multiRegisterFormSection").style.display = "";
+        document.getElementById("multiRegisterProgressSection").style.display =
+          "none";
+        document.getElementById("multiRegisterStartBtn").style.display = "";
+        document.getElementById("multiRegisterNewBatchBtn").style.display =
+          "none";
+        document.getElementById("multiRegisterCancelBtn").style.display =
+          "none";
+        loadMultiRegisterActiveNote();
       }
 
       function populateMultiRegisterForm(data) {
@@ -8886,6 +9664,15 @@
               escapeHtml(s.name) +
               '" oninput="updateMultiRegisterEstimate()" />' +
               "</td>" +
+              "<td>" +
+              '<input type="text" ' +
+              'class="form-control form-control-sm multi-register-portprefix-input" ' +
+              'placeholder="79XX" value="' +
+              escapeHtml(s.port_prefix || "") +
+              '" data-server="' +
+              escapeHtml(s.name) +
+              '" oninput="updateMultiRegisterEstimate()" />' +
+              "</td>" +
               "</tr>"
             );
           })
@@ -8903,6 +9690,12 @@
           .forEach(function (el) {
             reglimitByServer[el.dataset.server] = parseFloat(el.value);
           });
+        var portPrefixByServer = {};
+        document
+          .querySelectorAll(".multi-register-portprefix-input")
+          .forEach(function (el) {
+            portPrefixByServer[el.dataset.server] = el.value.trim();
+          });
         var configs = [];
         countInputs.forEach(function (el) {
           var n = parseInt(el.value, 10);
@@ -8911,6 +9704,7 @@
               server: el.dataset.server,
               count: n,
               reglimit: reglimitByServer[el.dataset.server],
+              port_prefix: portPrefixByServer[el.dataset.server] || null,
             });
           }
         });
@@ -8976,6 +9770,22 @@
               .join(", ");
           return;
         }
+        var badPortPrefix = serverConfigs.filter(function (c) {
+          return c.port_prefix && !isValidPortPrefix(c.port_prefix);
+        });
+        if (badPortPrefix.length > 0) {
+          errEl.style.display = "";
+          errEl.textContent =
+            "Invalid port band for " +
+            badPortPrefix
+              .map(function (c) {
+                return c.server;
+              })
+              .join(", ") +
+            ". " +
+            PORT_PREFIX_HINT;
+          return;
+        }
 
         var totalAttempts = serverConfigs.reduce(function (sum, c) {
           return sum + c.count;
@@ -8997,7 +9807,12 @@
           serverConfigs
             .map(function (c) {
               return (
-                escapeHtml(c.server) + " ×" + c.count + " @ τ" + c.reglimit
+                escapeHtml(c.server) +
+                " ×" +
+                c.count +
+                " @ τ" +
+                c.reglimit +
+                (c.port_prefix ? " · " + escapeHtml(c.port_prefix) : "")
               );
             })
             .join(", ") +
@@ -9076,6 +9891,7 @@
           })
           .then(function (batch) {
             showMultiRegisterProgress(batch);
+            loadBatchActiveRuns(); // show its pill immediately, not up to 15s later
           })
           .catch(function (err) {
             document.getElementById("multiRegisterFormSection").style.display =
@@ -9096,6 +9912,7 @@
         document.getElementById("multiRegisterProgressSection").style.display =
           "";
         document.getElementById("multiRegisterStartBtn").style.display = "none";
+        document.getElementById("multiRegisterNewBatchBtn").style.display = "";
         multiRegisterActiveBatchId = batch.batch_id;
         renderMultiRegisterProgress(batch);
         if (multiRegisterPollTimer) clearInterval(multiRegisterPollTimer);
@@ -9112,10 +9929,15 @@
           })
           .then(function (batch) {
             renderMultiRegisterProgress(batch);
-            if (batch.status === "DONE" || batch.status === "CANCELLED") {
+            if (
+              batch.status === "DONE" ||
+              batch.status === "CANCELLED" ||
+              batch.status === "FAILED"
+            ) {
               clearInterval(multiRegisterPollTimer);
               multiRegisterPollTimer = null;
               loadRegBotActiveRuns(); // the batch's last step may have just finished — refresh the active bar
+              loadBatchActiveRuns(); // and drop the batch's own pill
             }
           })
           .catch(function (err) {
@@ -9132,15 +9954,27 @@
             ? "bg-primary"
             : batch.status === "DONE"
               ? "bg-success"
-              : batch.status === "CANCELLING"
-                ? "bg-warning"
-                : "bg-secondary");
+              : batch.status === "FAILED"
+                ? "bg-danger"
+                : batch.status === "CANCELLING"
+                  ? "bg-warning"
+                  : "bg-secondary");
 
         var doneCount = batch.queue.filter(function (i) {
           return i.status === "DONE";
         }).length;
+        var failedCount = batch.queue.filter(function (i) {
+          return i.status === "LAUNCH_FAILED";
+        }).length;
+        // Surface failures in the summary too — a batch that launched nothing
+        // otherwise reads as "0 / N complete", which looks like "not started
+        // yet" rather than "every one of these errored".
         document.getElementById("multiRegisterProgressSummary").textContent =
-          doneCount + " / " + batch.queue.length + " complete";
+          doneCount +
+          " / " +
+          batch.queue.length +
+          " complete" +
+          (failedCount ? " · " + failedCount + " failed to launch" : "");
 
         document.getElementById("multiRegisterCancelBtn").style.display =
           batch.status === "RUNNING" ? "" : "none";
@@ -9155,7 +9989,7 @@
                   ? "UID " + item.synced_uids.join(", ")
                   : "no new UID";
             } else if (item.status === "RUNNING") {
-              detail = escapeHtml(item.last_line || "starting…");
+              detail = escapeHtml(stripAnsi(item.last_line) || "starting…");
             } else if (item.status === "LAUNCH_FAILED") {
               detail = escapeHtml(item.error || "launch failed");
             } else if (item.status === "CANCELLED") {
@@ -9173,6 +10007,9 @@
               "</td>" +
               "<td>τ" +
               item.reglimit +
+              "</td>" +
+              "<td>" +
+              (item.port_prefix ? escapeHtml(item.port_prefix) : "—") +
               "</td>" +
               "<td>" +
               (MULTI_REGISTER_STATUS_ICON[item.status] || "") +
@@ -9266,7 +10103,7 @@
         document.getElementById("multiUnstakeFormError").style.display = "none";
         document.getElementById("multiUnstakeEstimate").textContent = "";
         document.getElementById("multiUnstakeStartBtn").style.display = "";
-        document.getElementById("multiUnstakeMode").value = "unstake_transfer";
+        document.getElementById("multiUnstakeMode").value = "unstake";
         multiUnstakePendingStart = null;
         multiUnstakeActiveBatchId = null;
         if (multiUnstakePollTimer) {
@@ -9328,7 +10165,17 @@
               "<td>" +
               '<input type="text" ' +
               'class="form-control form-control-sm multi-unstake-destination-input" ' +
-              'placeholder="SS58 address" data-server="' +
+              'placeholder="SS58 address" value="' +
+              escapeHtml(s.default_destination || "") +
+              '" data-server="' +
+              escapeHtml(s.name) +
+              '" onclick="event.stopPropagation()" ' +
+              'oninput="updateMultiUnstakeEstimate()" />' +
+              "</td>" +
+              "<td>" +
+              '<input type="number" min="0" step="0.0001" ' +
+              'class="form-control form-control-sm multi-unstake-amount-input" ' +
+              'placeholder="all" data-server="' +
               escapeHtml(s.name) +
               '" onclick="event.stopPropagation()" ' +
               'oninput="updateMultiUnstakeEstimate()" />' +
@@ -9346,9 +10193,9 @@
       }
 
       function onMultiUnstakeModeChanged() {
-        var isTransfer =
-          document.getElementById("multiUnstakeMode").value ===
-          "unstake_transfer";
+        var isTransfer = modeNeedsDestination(
+          document.getElementById("multiUnstakeMode").value,
+        );
         document
           .querySelectorAll(".multi-unstake-destination-input")
           .forEach(function (el) {
@@ -9356,6 +10203,19 @@
           });
         document.getElementById("multiUnstakeDestinationHeader").textContent =
           isTransfer ? "Destination" : "Destination (n/a — unstake only)";
+        // Amount is transfer-only, same reasoning as the single-server modal:
+        // with unstake_transfer the sweep size isn't known until the unstake
+        // has actually freed the stake.
+        var isTransferOnly =
+          document.getElementById("multiUnstakeMode").value === "transfer";
+        document
+          .querySelectorAll(".multi-unstake-amount-input")
+          .forEach(function (el) {
+            el.disabled = !isTransferOnly;
+            if (!isTransferOnly) el.value = "";
+          });
+        document.getElementById("multiUnstakeAmountHeader").textContent =
+          isTransferOnly ? "Amount (τ)" : "Amount (n/a)";
         updateMultiUnstakeEstimate();
       }
 
@@ -9366,6 +10226,15 @@
           .forEach(function (el) {
             destByServer[el.dataset.server] = el.value.trim();
           });
+        var amountByServer = {};
+        document
+          .querySelectorAll(".multi-unstake-amount-input")
+          .forEach(function (el) {
+            var raw = (el.value || "").trim();
+            // Blank stays null: that means "send everything", which is a
+            // different instruction from a number, not a missing value.
+            amountByServer[el.dataset.server] = raw ? parseFloat(raw) : null;
+          });
         return Array.prototype.slice
           .call(
             document.querySelectorAll("#multiUnstakeServerRows tr.selected"),
@@ -9375,6 +10244,7 @@
             return {
               server: server,
               destination: destByServer[server] || "",
+              amount: amountByServer[server],
             };
           });
       }
@@ -9401,7 +10271,7 @@
           errEl.textContent = "Select at least one server.";
           return;
         }
-        if (mode === "unstake_transfer") {
+        if (modeNeedsDestination(mode)) {
           var missingDest = items.filter(function (it) {
             return !it.destination;
           });
@@ -9417,29 +10287,52 @@
             return;
           }
         }
+        if (mode === "transfer") {
+          var badAmount = items.filter(function (it) {
+            return it.amount !== null && (isNaN(it.amount) || it.amount <= 0);
+          });
+          if (badAmount.length > 0) {
+            errEl.style.display = "";
+            errEl.textContent =
+              "Amount must be a positive number of TAO (or blank to send " +
+              "everything) for: " +
+              badAmount
+                .map(function (it) {
+                  return it.server;
+                })
+                .join(", ");
+            return;
+          }
+        }
 
         var batchItems = items.map(function (it) {
           return {
             server: it.server,
             mode: mode,
-            destination: mode === "unstake_transfer" ? it.destination : null,
+            destination: modeNeedsDestination(mode) ? it.destination : null,
+            amount: mode === "transfer" ? it.amount : null,
           };
         });
         multiUnstakePendingStart = { items: batchItems };
 
         document.getElementById("multiUnstakeConfirmDetails").innerHTML =
           "<div><strong>Action:</strong> " +
-          (mode === "unstake_transfer"
-            ? "Unstake &amp; Transfer"
-            : "Unstake only") +
+          escapeHtml(modeLabel(mode)) +
           "</div>" +
           "<div><strong>Servers:</strong> " +
           items
             .map(function (it) {
               return (
                 escapeHtml(it.server) +
-                (mode === "unstake_transfer"
+                (modeNeedsDestination(mode)
                   ? " → " + escapeHtml(it.destination)
+                  : "") +
+                (mode === "transfer"
+                  ? " (" +
+                    (it.amount === null
+                      ? "all"
+                      : "τ" + escapeHtml(String(it.amount))) +
+                    ")"
                   : "")
               );
             })
@@ -9589,9 +10482,9 @@
               if (!item.success) {
                 icon = '<i class="bi bi-x-circle-fill text-danger"></i>';
               }
-              detail = escapeHtml(item.last_line || "");
+              detail = escapeHtml(stripAnsi(item.last_line) || "");
             } else if (item.status === "RUNNING") {
-              detail = escapeHtml(item.last_line || "starting…");
+              detail = escapeHtml(stripAnsi(item.last_line) || "starting…");
             } else if (item.status === "LAUNCH_FAILED") {
               detail = escapeHtml(item.error || "launch failed");
             }
@@ -9604,9 +10497,14 @@
               escapeHtml(item.server) +
               "</td>" +
               "<td>" +
-              (item.mode === "unstake_transfer"
-                ? "Unstake+Transfer"
-                : "Unstake") +
+              escapeHtml(modeLabel(item.mode)) +
+              (item.mode === "transfer"
+                ? " (" +
+                  (item.amount == null
+                    ? "all"
+                    : "τ" + escapeHtml(String(item.amount))) +
+                  ")"
+                : "") +
               "</td>" +
               "<td>" +
               icon +
@@ -9675,7 +10573,7 @@
         html += data.active
           .map(function (r) {
             var elapsed = r.started_at ? formatElapsedSince(r.started_at) : "";
-            var lastLine = r.last_line || "";
+            var lastLine = stripAnsi(r.last_line) || "";
             var titleText = escapeHtml(
               r.server +
                 " — " +
@@ -9731,6 +10629,117 @@
           });
       }
 
+      // ---- Batch bar: registration batches in flight, with queue progress ----
+      // The RegBot bar above shows individual creg79 runs, but a run gives no
+      // hint that it belongs to a batch or how much of that batch is left —
+      // this shows the queue itself so a long batch is visible at a glance.
+      var batchActiveTimer = null;
+
+      function openBatchFromBar(batchId) {
+        resetMultiRegisterModal();
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("multiRegisterModal"),
+        ).show();
+        loadRegBotPresets()
+          .then(populateMultiRegisterForm)
+          .catch(function () {});
+        viewMultiRegisterBatch(batchId);
+      }
+
+      function renderBatchActiveBar(data) {
+        var bar = document.getElementById("batchActiveBar");
+        var inner = document.getElementById("batchActiveBarInner");
+        var batches = (data && data.batches) || [];
+        if (getSubnetFromInput() !== 79 || !batches.length) {
+          bar.style.display = "none";
+          return;
+        }
+        bar.style.display = "";
+        var html =
+          '<span class="regbot-hint" style="font-weight: 600">' +
+          '<i class="bi bi-list-ol"></i> Batch running:</span>';
+        html += batches
+          .map(function (b) {
+            var total = b.queue.length;
+            var done = b.queue.filter(function (i) {
+              return i.status === "DONE";
+            }).length;
+            var failed = b.queue.filter(function (i) {
+              return i.status === "LAUNCH_FAILED";
+            }).length;
+            var inFlight = b.queue.filter(function (i) {
+              return i.status === "RUNNING";
+            });
+            var uids = b.queue.reduce(function (acc, i) {
+              return acc.concat(i.synced_uids || []);
+            }, []);
+            var pct = total ? Math.round((done / total) * 100) : 0;
+            var title = escapeHtml(
+              b.batch_id +
+                "\n" +
+                done +
+                "/" +
+                total +
+                " registered" +
+                (failed ? ", " + failed + " failed to launch" : "") +
+                (uids.length ? "\nUIDs: " + uids.join(", ") : "") +
+                (inFlight.length
+                  ? "\nnow: " +
+                    inFlight
+                      .map(function (i) {
+                        return (
+                          i.server +
+                          " — " +
+                          (stripAnsi(i.last_line) || "starting…")
+                        );
+                      })
+                      .join("; ")
+                  : ""),
+            );
+            return (
+              '<span class="batch-run-pill" title="' +
+              title +
+              '" onclick="openBatchFromBar(\'' +
+              b.batch_id +
+              "')\">" +
+              '<span class="batch-pulse-dot"></span>' +
+              (b.status === "CANCELLING" ? "cancelling · " : "") +
+              done +
+              "/" +
+              total +
+              '<span class="batch-progress-track">' +
+              '<span class="batch-progress-fill" style="width: ' +
+              pct +
+              '%"></span></span>' +
+              (inFlight.length
+                ? " " + escapeHtml(inFlight[0].server)
+                : " queued") +
+              (failed
+                ? ' <span class="text-danger">' + failed + " failed</span>"
+                : "") +
+              "</span>"
+            );
+          })
+          .join("");
+        inner.innerHTML = html;
+      }
+
+      function loadBatchActiveRuns() {
+        if (getSubnetFromInput() !== 79) {
+          document.getElementById("batchActiveBar").style.display = "none";
+          return;
+        }
+        fetch("/api/regbot/batch/active")
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(renderBatchActiveBar)
+          .catch(function () {
+            // Silent — background poll, not a user-initiated action.
+          });
+      }
+
       // ---- Unstake active-run bar: which coldkey(s) have a live unstake in
       // flight right now — covers both a solo run and any in-flight batch
       // item, since a batch item is just a regular run under the hood. ----
@@ -9777,7 +10786,7 @@
         html += data.active
           .map(function (r) {
             var elapsed = r.started_at ? formatElapsedSince(r.started_at) : "";
-            var lastLine = r.last_line || "";
+            var lastLine = stripAnsi(r.last_line) || "";
             var titleText = escapeHtml(
               r.server +
                 " — " +
@@ -9785,8 +10794,7 @@
                 (elapsed ? "\n" + elapsed : "") +
                 (lastLine ? "\n" + lastLine : ""),
             );
-            var modeText =
-              r.mode === "unstake_transfer" ? "Unstake+Transfer" : "Unstake";
+            var modeText = modeLabel(r.mode);
             return (
               '<span class="unstake-run-pill" title="' +
               titleText +
@@ -9821,6 +10829,138 @@
           .then(renderUnstakeActiveBar)
           .catch(function () {
             // Silent — this is a background poll, not a user-initiated action.
+          });
+      }
+
+      // ---- Coldkeys/IPs watch: hourly metagraph scan, flags what's new ----
+      function openColdkeysModal() {
+        bootstrap.Modal.getOrCreateInstance(
+          document.getElementById("coldkeysModal"),
+        ).show();
+        loadColdkeysSummary(true);
+      }
+
+      function renderColdkeysSummary(data) {
+        var summaryEl = document.getElementById("coldkeysSummaryLine");
+        var badge = document.getElementById("coldkeysBadge");
+        var newCount = data.new_coldkeys ? data.new_coldkeys.length : 0;
+
+        if (!data.run_at) {
+          summaryEl.textContent = "No check has run yet.";
+        } else {
+          var label = document.getElementById("coldkeysNetuidLabel");
+          if (label && data.netuid != null)
+            label.textContent = "netuid-" + data.netuid;
+          summaryEl.textContent =
+            "Last checked: " +
+            new Date(data.run_at).toLocaleString() +
+            " · " +
+            data.total_coldkeys +
+            " coldkeys, " +
+            data.total_ips +
+            " IPs total" +
+            (data.is_first_run
+              ? " (baseline run — nothing flagged as new yet)"
+              : "");
+        }
+
+        if (newCount > 0) {
+          badge.textContent = newCount;
+          badge.style.display = "";
+        } else {
+          badge.style.display = "none";
+        }
+
+        var ckList = document.getElementById("coldkeysNewColdkeysList");
+        if (!data.new_coldkeys || data.new_coldkeys.length === 0) {
+          ckList.innerHTML =
+            '<div class="text-muted" style="font-size: 0.85rem">None</div>';
+        } else {
+          ckList.innerHTML = data.new_coldkeys
+            .map(function (ck) {
+              var ips =
+                (data.new_coldkey_to_ips && data.new_coldkey_to_ips[ck]) || [];
+              return (
+                '<div class="mb-1" style="font-family: monospace; font-size: 0.82rem">' +
+                escapeHtml(ck) +
+                (ips.length
+                  ? ' <span class="text-muted">(' +
+                    ips.map(escapeHtml).join(", ") +
+                    ")</span>"
+                  : "") +
+                "</div>"
+              );
+            })
+            .join("");
+        }
+
+        var ipList = document.getElementById("coldkeysNewIpsList");
+        if (!data.new_ips || data.new_ips.length === 0) {
+          ipList.innerHTML =
+            '<div class="text-muted" style="font-size: 0.85rem">None</div>';
+        } else {
+          ipList.innerHTML = data.new_ips
+            .map(function (ip) {
+              return (
+                '<div class="mb-1" style="font-family: monospace; font-size: 0.82rem">' +
+                escapeHtml(ip) +
+                "</div>"
+              );
+            })
+            .join("");
+        }
+      }
+
+      function loadColdkeysSummary(showLoadingState) {
+        if (showLoadingState) {
+          document.getElementById("coldkeysSummaryLine").textContent =
+            "Loading…";
+        }
+        fetch("/api/coldkeys/summary")
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          })
+          .then(renderColdkeysSummary)
+          .catch(function (err) {
+            if (showLoadingState) {
+              document.getElementById("coldkeysSummaryLine").textContent =
+                "Failed to load: " + err.message;
+            }
+          });
+      }
+
+      function refreshColdkeysNow() {
+        var btn = document.getElementById("coldkeysRefreshBtn");
+        var originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML =
+          '<span class="spinner-border spinner-border-sm" role="status" ' +
+          'aria-hidden="true"></span> Checking…';
+        fetch("/api/coldkeys/refresh", { method: "POST" })
+          .then(function (r) {
+            return r.json().then(function (data) {
+              if (!r.ok) throw new Error(data.detail || "HTTP " + r.status);
+              return data;
+            });
+          })
+          .then(function (data) {
+            renderColdkeysSummary(data);
+            if (data.new_coldkeys && data.new_coldkeys.length) {
+              showNotifyAlert(
+                "New coldkey(s) detected",
+                data.new_coldkeys.length + " new coldkey(s) on SN79",
+                "success",
+                10000,
+              );
+            }
+          })
+          .catch(function (err) {
+            showNotifyAlert("Coldkey check failed", err.message, "error", 8000);
+          })
+          .finally(function () {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
           });
       }
     </script>
