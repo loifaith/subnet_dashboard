@@ -91,7 +91,7 @@ terminal status:
 > writing a "DONE" here would record a completion that never happened and stop the
 > next startup from resuming the items still waiting to launch.
 
-`resume_interrupted_batches()` runs once at startup ([app.py:225](../../../app.py#L225))
+`resume_interrupted_batches()` runs once at startup ([app.py:399](../../../app.py#L399))
 and restarts the orchestrator for anything still `RUNNING`/`CANCELLING`. Items
 already in `("DONE", "CANCELLED", "LAUNCH_FAILED")` are skipped — re-running them
 would double-register.

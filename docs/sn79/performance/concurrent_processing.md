@@ -10,8 +10,8 @@ for a specific class of work.
 |---|---|---|
 | `asyncio.gather` over subprocesses | SSH fan-out, parallel independent work | `get_active_runs`, bulk restart, keepalive |
 | `asyncio.create_subprocess_exec` | anything CPU-bound or that loads `bittensor` | `chain_cli.py`, metagraph, status refresh |
-| `asyncio.to_thread` | blocking **network** I/O in a C-releasing library | `cloudscraper` TAOS queries, file parsing |
-| `asyncio.create_task` | work that outlives the request | RegBot batches, unstake runs, all six workers |
+| `asyncio.to_thread` / `run_in_threadpool` | blocking **file** or **network** I/O | `cloudscraper` TAOS queries, every params/JSONL read on a request path |
+| `asyncio.create_task` | work that outlives the request | RegBot batches, unstake runs, all eight workers |
 
 ## Choosing between `to_thread` and a subprocess
 
@@ -25,6 +25,36 @@ This is the decision that matters most:
   See [chain_subprocess.md](chain_subprocess.md).
 
 Getting this backwards is the main way to reintroduce the 13.7s stalls.
+
+## The third case: pure-Python work that is neither
+
+`json.dumps` of a 275KB payload is not I/O and not a chain call. It is ~44ms of
+GIL-held CPU inside an `async def`, which means ~44ms of stall for *every* other
+in-flight request — and a page load fires six of these at once.
+
+Measured before it was fixed: `/api/sim-id`, `/api/unstake/active` and
+`/api/coldkeys/summary` each cost ~1ms in isolation but reported ~270ms of server
+time during a page load, purely from queueing behind three handlers serialising
+large payloads.
+
+The answer is not a thread. It is **not doing the work per request**: cache the
+serialised bytes and return them, so a warm request neither reads the disk nor
+serialises. See [cache.md](cache.md) §7 and
+[page_load_audit.md](page_load_audit.md) §3.4.
+
+Anything left on a request path that touches the filesystem goes through
+`starlette.concurrency.run_in_threadpool` — the params directory scan,
+`get_cached_metrics_payload`, `build_fee_history`, `build_uid_history`,
+`build_agent_history_response`.
+
+## Rule of thumb for a new endpoint
+
+1. Does it spawn a process or open an SSH connection? → **background worker**, and
+   the handler reads its result out of memory. No exceptions.
+2. Does it block on a socket or the filesystem? → `run_in_threadpool`.
+3. Does it serialise more than ~20KB, or get polled? → cache the **bytes** and give
+   it a weak ETag.
+4. Is it GIL-bound pure Python? → subprocess.
 
 ## Fan-out patterns
 

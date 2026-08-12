@@ -61,6 +61,13 @@ is what the dashboard reads for the agent dropdown.
 All of these are gitignored ([.gitignore](../../.gitignore)) — the repo tracks code,
 not fleet state.
 
+Two paths that *are* code and *are* tracked, both served directly to the browser:
+
+| Path | What |
+|---|---|
+| `templates/miners.html` | markup + CSS. **No Jinja tags** — it is read once per mtime and served as bytes with an ETag, not rendered. |
+| `asset/miners.js` | the page's ~7.3k lines of client code, served by the `/js/miners.js` route (not the `/asset` mount, which sends no `Cache-Control`). |
+
 ## Why append-only JSONL for some things and rewrite-JSON for others
 
 - **JSONL, append-only**: anything that is a record of something that happened —

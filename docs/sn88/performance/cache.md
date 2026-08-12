@@ -53,7 +53,7 @@ next request sees the new file rather than a stale 300s cache.
 ## Dead config
 
 `INVESTING88_SYNC_HOUR` (19) and `INVESTING88_SYNC_TZ` are read into module
-constants in [app.py:37-40](../../../app.py#L37-L40) but the worker never consults
+constants in [app.py:42-44](../../../app.py#L42-L44) but the worker never consults
 them — it just loops hourly. The Tokyo boundary that matters is the one in
 `_today_tokyo()` above. Noted in
 [../../sn79/tricks/known_issues.md](../../sn79/tricks/known_issues.md).

@@ -7,6 +7,12 @@ Every HTTP endpoint, in one table. All of these live in [app.py](../app.py) on p
 Read endpoints are `GET` and safe. **Write endpoints are marked ⚠ where they spend
 or move TAO.**
 
+Responses are gzipped above 1KB, and the cached read paths carry a weak `ETag` with
+`Cache-Control: no-cache` — send `If-None-Match` and an unchanged payload answers
+`304` with no body. Endpoints backed by a background worker also set `X-Cache:
+hit|stale|miss|stale-error`. See
+[sn79/performance/page_load_audit.md](sn79/performance/page_load_audit.md).
+
 ## Pages
 
 | Method | Path | Notes |
@@ -23,13 +29,14 @@ or move TAO.**
 | Method | Path | Query | Doc |
 |---|---|---|---|
 | GET | `/api/metagraph-data` | `netuid`, `refresh` | [metagraph_view](sn79/miners/metagraph_view.md) |
+| GET | `/api/subnet-emission` | `netuid` | total non-validator emission + alpha price, off the warm metagraph |
 | GET | `/api/uid-status/{uid}` | `books`, `refresh` | [uid_status](sn79/miners/uid_status.md) |
 | GET | `/api/uid-metrics` | `uids`, `refresh` | [uid_status](sn79/miners/uid_status.md) |
 | GET | `/api/miner-history` | — | [miner_history](sn79/miners/miner_history.md) |
 | GET | `/api/miner-history/{uid}` | `days` (1–90), `day`, `limit` | ″ |
 | GET | `/api/agent-history/{uid}` | `limit` (1–500) | ″ |
 | GET | `/api/fee-regime` | `books`, `refresh` | [fee_regime](sn79/miners/fee_regime.md) |
-| GET | `/api/fee-regime/history` | `days`, `day`, `uid`, `limit` | ″ |
+| GET | `/api/fee-regime/history` | `days`, `day`, `uid`, `limit`, `book_points` | ″ |
 | GET | `/api/reg-cost` | `netuid`, `refresh` | [reg_cost](sn79/miners/reg_cost.md) |
 | GET | `/api/sim-id` | — | [sim_id](sn79/miners/sim_id.md) |
 | GET | `/api/alpha-price` | `netuid`, `range` (24h/7d/30d/90d/1y/all) | [alpha_price](sn79/miners/alpha_price.md) |
@@ -56,7 +63,7 @@ or move TAO.**
 | GET | `/api/regbot/balance` | `server`, `refresh` |
 | POST | `/api/regbot/balance/refresh` | — |
 | GET | `/api/regbot/history` | `limit` |
-| GET | `/api/regbot/active` | — |
+| GET | `/api/regbot/active` | `refresh` — omit it; see below |
 | ⚠ POST | `/api/regbot/batch/start` | `{servers: [{server, count, reglimit, port_prefix?}], dispatch_agent, dispatch_agent_id?}` |
 | GET | `/api/regbot/batch/active` | — |
 | GET | `/api/regbot/batch/{batch_id}` | — |
@@ -110,6 +117,22 @@ No authentication; CORS open. Consumed by the miner boxes.
 | GET | `/books/{uid}/history` | `minutes` (1–180) |
 | GET | `/history` | `uid`, `minutes` (1–180) |
 
+## Two parameters worth knowing
+
+**`/api/fee-regime/history?book_points=`** — `all` (default, one per-book snapshot
+per point), `latest` (only the newest, which is all the books chart plots), `none`.
+`latest` is the difference between a 754KB and a 30KB response; the UI uses it.
+
+**`/api/regbot/active?refresh=1`** — forces the SSH fan-out across all 12 presets
+instead of reading `_regbot_active_scan_worker`'s last result. ~690ms vs ~1ms. Use it
+only right after an action that changed what is running. **Never from a poll.**
+
+## Pages and assets
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/js/miners.js` | the page's client code; ETag'd, revalidated, not under `/asset` |
+
 ## Error conventions
 
 | Status | Means |
@@ -119,6 +142,7 @@ No authentication; CORS open. Consumed by the miner boxes.
 | 404 | no such UID / no params file / no history / no alpha data |
 | 500 | a domain module failed to import |
 | 502 | an upstream failed — chain, TAOS, SSH, Investing88 |
+| 304 | you sent `If-None-Match` and nothing changed |
 | 503 | status server has no data yet (first poll pending) |
 | 504 | metagraph load exceeded 90 s |
 

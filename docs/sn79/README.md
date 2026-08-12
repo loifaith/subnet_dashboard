@@ -19,7 +19,7 @@ stat all derive from that directory listing. There is no registry anywhere else.
 
 The params file holds an `agents` list and an `agent_index`. **`agent_index` is an
 `agent_id` field, not a list position** — `_active_agent_pos()`
-([app.py:815](../../app.py#L815)) looks up by `agent_id` first and only falls back to
+([app.py:1053](../../app.py#L1053)) looks up by `agent_id` first and only falls back to
 positional indexing for old files. Several entries can share a display name with
 different tuned params (two `GammaPrimeAgent` variants), which is exactly why
 `agent_id` is authoritative.
@@ -38,7 +38,7 @@ miners on different boxes can never collide.
 | Copy | Purpose |
 |---|---|
 | `SERVER_PRESETS` in [regbot.py](../../79Miners/monitor/regbot.py) | source of truth for RegBot/unstake |
-| `SERVER_NICKNAMES` in [app.py:494](../../app.py#L494) | IP → name for table display |
+| `SERVER_NICKNAMES` in [app.py:728](../../app.py#L728) | IP → name for table display |
 | `SERVER_NICKNAMES` in [miners.html](../../templates/miners.html) | client-side IP → name |
 
 Preset names are validated at import: a name that can't appear in a `run_id`

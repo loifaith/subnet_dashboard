@@ -7,16 +7,30 @@ change. This is the most-used write path in the dashboard.
 
 | Method | Path | Source |
 |---|---|---|
-| GET | `/api/miner-params` | [app.py:868](../../../app.py#L868) — owned UIDs + a per-UID agent summary |
-| GET | `/api/miner-params/{uid}` | [app.py:887](../../../app.py#L887) — the raw file |
-| PUT | `/api/miner-params/{uid}` | [app.py:896](../../../app.py#L896) — save + push + history |
-| POST | `/api/miner-restart/{uid}` | [app.py:1017](../../../app.py#L1017) |
-| POST | `/api/miner-restart-bulk` | [app.py:1041](../../../app.py#L1041) |
+| GET | `/api/miner-params` | [app.py:1127](../../../app.py#L1127) — owned UIDs + a per-UID agent summary |
+| GET | `/api/miner-params/{uid}` | [app.py:1144](../../../app.py#L1144) — the raw file |
+| PUT | `/api/miner-params/{uid}` | [app.py:1153](../../../app.py#L1153) — save + push + history |
+| POST | `/api/miner-restart/{uid}` | [app.py:1274](../../../app.py#L1274) |
+| POST | `/api/miner-restart-bulk` | [app.py:1298](../../../app.py#L1298) |
+
+## The roster read is cached as bytes — and the write must invalidate it
+
+`GET /api/miner-params` scans ~200 `run_miner_*.json` files. Measured at **99ms**,
+which on a single event loop is 99ms of stall for every other in-flight request, on
+a call the page makes on every load. So the scan runs in a thread and the serialised
+result is held in `_miner_params_cache` (`MINER_PARAMS_CACHE_SECONDS` = 30s):
+**99ms → 1.2ms**.
+
+**`_save_miner_params_file()` calls `_miner_params_cache.invalidate()`.** Any new
+writer of `79Miners/params/` must do the same, or the agent column shows the
+pre-edit value for up to 30 seconds after a save the user just watched succeed. This
+is the failure mode a TTL alone does not cover — see
+[../performance/cache.md](../performance/cache.md) §7.
 
 ## `agent_index` is an `agent_id`
 
 The single most important rule in this file format. `_active_agent_pos()`
-([app.py:815](../../../app.py#L815)):
+([app.py:1053](../../../app.py#L1053)):
 
 1. find the entry whose `agent_id == agent_index` → return its list position;
 2. otherwise, if `agent_index` is in range, treat it as a list position (legacy files);
@@ -38,14 +52,14 @@ That's what makes the UI's "remove a param" button work. Contrast with
 
 ### Type coercion
 
-`_coerce_param_value()` ([app.py:514](../../../app.py#L514)) preserves the existing
+`_coerce_param_value()` ([app.py:748](../../../app.py#L748)) preserves the existing
 value's type — bool stays bool, int stays int — with one deliberate exception: an
 int-typed field given `1.5` returns a float, so fractional input isn't silently
 truncated. Unparseable strings fall back to the original value rather than raising.
 
 ## The push
 
-`_rsync_miner_params()` ([app.py:609](../../../app.py#L609)) — **despite the name it
+`_rsync_miner_params()` ([app.py:847](../../../app.py#L847)) — **despite the name it
 does not use rsync**:
 
 ```bash
@@ -66,7 +80,7 @@ The SSH options carry ControlMaster multiplexing — see
 
 `pm2 restart 79-miner-<uid>` over the same warm connection. Bulk restart
 **groups UIDs by box** and issues one `pm2 restart a b c …` per box, all boxes in
-parallel ([app.py:697](../../../app.py#L697)) — one ssh per box rather than per UID,
+parallel ([app.py:1321](../../../app.py#L1321)) — one ssh per box rather than per UID,
 and it avoids racing the pm2 daemon with concurrent CLI calls. Capped at 500 UIDs.
 
 Restarting is rarely needed: the dispatcher re-reads the params file on every poll.

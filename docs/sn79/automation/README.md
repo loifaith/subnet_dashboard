@@ -30,7 +30,7 @@ Two Telegram bots are involved, with different tokens:
 
 | Bot | Sends | Configured in |
 |---|---|---|
-| `@sn79_sim_id_bot` | sim rotation, from the dashboard | [app.py:65](../../../app.py#L65) |
+| `@sn79_sim_id_bot` | sim rotation, from the dashboard | [app.py:69](../../../app.py#L69) |
 | the RegBot bot | registration progress, from `creg79.py` on the miner box | [run79.sh:24](../../../79Miners/RegBot/run79.sh#L24) |
 
 Both tokens are hard-coded as defaults and one is committed —

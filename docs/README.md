@@ -35,16 +35,20 @@ docs/
 | Add a feature to the dashboard page | [sn79/miners/](sn79/miners/) |
 | Touch anything that spends TAO | [sn79/regbot/overview.md](sn79/regbot/overview.md), [sn79/unstake/overview.md](sn79/unstake/overview.md) |
 | Avoid re-introducing a solved latency bug | [sn79/performance/](sn79/performance/) |
+| See what a page load costs and why | [sn79/performance/page_load_audit.md](sn79/performance/page_load_audit.md) |
 | Know what's currently broken | [sn79/tricks/known_issues.md](sn79/tricks/known_issues.md) |
 
 ## Ground rules this codebase follows
 
 1. **Bittensor never loads inside the web process.** Every chain query runs as a
    child process. See [sn79/performance/chain_subprocess.md](sn79/performance/chain_subprocess.md).
-2. **Anything that spends or moves TAO writes an append-only audit log** before
+2. **A browser request never waits on an upstream.** Chain queries and SSH fan-outs
+   are owned by background workers; the request path does a memory lookup. See
+   [sn79/performance/cache.md](sn79/performance/cache.md) §6.
+3. **Anything that spends or moves TAO writes an append-only audit log** before
    or after the fact, and is validated twice (client and server).
-3. **Every file write that a reader might race is atomic** (`tmp` + `os.replace`).
-4. **State that outlives a request is persisted**, so a `pm2 restart` never
+4. **Every file write that a reader might race is atomic** (`tmp` + `os.replace`).
+5. **State that outlives a request is persisted**, so a `pm2 restart` never
    silently drops in-flight work.
-5. **Stale-but-real beats fresh-but-empty**: upstream misses carry forward the last
+6. **Stale-but-real beats fresh-but-empty**: upstream misses carry forward the last
    good value rather than rendering zeros.

@@ -15,6 +15,17 @@ Logs land in [logs/](../../logs/) as `<app>-out.log` / `<app>-error.log`.
 Note `logging.basicConfig(level=INFO)` writes to **stderr**, so ordinary INFO lines
 appear in `*-error.log`, not `*-out.log`.
 
+**`dashboard` is `instances: 1`, `exec_mode: fork`** — one process, one event loop.
+That is not incidental: every in-process cache and all eight background workers
+assume a single instance. Switching to cluster mode would give each worker its own
+copy of every cache, multiply the chain and SSH fan-outs by the instance count, and
+make `X-Cache` meaningless. See
+[../sn79/performance/page_load_audit.md](../sn79/performance/page_load_audit.md).
+
+There is **no reverse proxy** in front of 12800 — uvicorn is the edge. Compression
+(`GZipMiddleware`, >1KB) and cache validation (weak ETags) therefore happen in
+`app.py` or not at all.
+
 ## Start / restart
 
 ```bash
@@ -42,7 +53,7 @@ See [../sn79/tricks/process_detachment.md](../sn79/tricks/process_detachment.md)
 `app.py` reads plain `os.getenv` with in-code defaults, so **the defaults below are
 what actually runs** unless PM2 injects otherwise.
 
-### Timing / worker cadence ([app.py:32-67](../../app.py#L32-L67))
+### Timing / worker cadence ([app.py:36-71](../../app.py#L36-L71))
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -56,6 +67,13 @@ what actually runs** unless PM2 injects otherwise.
 | `MINER_PARAMS_KEEPALIVE_SECONDS` | 300 | SSH master warm-up (must stay < `ControlPersist=600`) |
 | `SIM_ID_POLL_SECONDS` | 60 | sim-epoch watcher |
 | `UID_STATUS_CACHE_MAX` | 256 | LRU-ish bound on the per-UID status cache |
+| `METAGRAPH_REFRESH_SECONDS` | 90 | metagraph warm-refresh worker — **must stay < `METAGRAPH_CACHE_TTL` (120)** |
+| `METAGRAPH_WARM_NETUIDS` | `79,71,88` | which metagraphs that worker keeps warm |
+| `REGBOT_ACTIVE_SCAN_SECONDS` | 20 | RegBot active-run SSH scan cadence |
+| `MINER_PARAMS_CACHE_SECONDS` | 30 | `/api/miner-params` byte cache (also invalidated on write) |
+| `UID_METRICS_CACHE_SECONDS` | 30 | `/api/uid-metrics` byte cache |
+| `FEE_HISTORY_CACHE_SECONDS` | 60 | `/api/fee-regime/history` byte cache |
+| `FEE_HISTORY_MAX_POINTS` | 600 | per-series cap before downsampling |
 
 ### Paths
 

@@ -21,7 +21,7 @@ the dashboard**. Knowing which files are dead saves a lot of reading.
 | `.env` / `.env.example` | `OPENROUTER_API_KEY`, `SCRAPINGDOG_API_KEY` | only `backend_api.py` loads it |
 
 Verified: `app.py` renders exactly two templates —
-`login.html` and `miners.html` ([app.py:314-358](../../app.py#L314-L358)).
+`login.html` and `miners.html` ([app.py:490-593](../../app.py#L490-L593)).
 
 ## Live files
 
@@ -34,11 +34,12 @@ for *any* netuid, including 79 and 88.
 ## Leftover naming
 
 - `app = FastAPI(title="SN71 Session Manager", ...)` — the FastAPI title at
-  [app.py:267](../../app.py#L267) still says SN71.
+  [app.py:440](../../app.py#L440) still says SN71.
 - `_parse_netuid(raw, default=71)` — the server-side default netuid is 71, but the
   UI always sends an explicit `netuid` (default 79), so this default is never hit
   in practice.
 - `templates/miners.html` `<title>` says "SN88"; the page is subnet-agnostic.
+- The page's JS now lives in `asset/miners.js`; `miners.html` is markup and CSS only.
 
 ## If you want to remove it
 

@@ -3,6 +3,25 @@
 The hard part of RegBot isn't launching — it's knowing when a run is *actually*
 done. Two independent signals, and the log wins.
 
+## Who calls it, and when
+
+`get_active_runs()` is **not** on the request path. It is ~690ms of SSH fan-out, and
+it used to run on every poll of every open tab; `_regbot_active_scan_worker()` now
+owns it at `REGBOT_ACTIVE_SCAN_SECONDS` (20s) and `GET /api/regbot/active` reads its
+last result out of memory in ~1ms.
+
+Two consequences worth internalising:
+
+- **Cost is independent of how many dashboards are open.** Ten tabs polling at 20s
+  produce one scan per 20s, not ten.
+- **A failed scan keeps the previous result.** A briefly unreachable box must not
+  look like "no runs are active".
+
+`?refresh=1` forces a live scan. The UI passes it only right after an action that
+changed what is running — a trigger, a kill, a batch step finishing — where waiting
+up to 20s for a pill to appear or disappear would look broken. **A background poll
+must never pass it.**
+
 ## Discovering live runs
 
 `get_active_runs()` ([regbot.py:856](../../../79Miners/monitor/regbot.py#L856)) fans

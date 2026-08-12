@@ -2,7 +2,7 @@
 
 The main grid. Everything else on the page feeds it.
 
-`renderTable()` — [miners.html](../../../templates/miners.html) ~line 8013.
+`renderTable()` — [miners.js](../../../asset/miners.js).
 
 ## Where each column's data comes from
 

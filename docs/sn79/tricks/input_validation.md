@@ -52,7 +52,7 @@ belt-and-braces.
 
 Every RegBot/unstake request body is a Pydantic model with
 `model_config = ConfigDict(extra="forbid")`
-([app.py:1921-1979](../../../app.py#L1921-L1979)). A misspelled field is a **400**, not
+([app.py:2310-2318](../../../app.py#L2310-L2318)). A misspelled field is a **400**, not
 a silently-ignored parameter that leaves you registering with a default `reglimit`.
 
 ## Validate the whole batch before starting it

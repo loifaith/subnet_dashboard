@@ -24,7 +24,7 @@ protocol chatter — at 160 ms RTT that is 2–3 seconds.
 
 Defined twice, and **deliberately on the same `ControlPath`**:
 
-- `MINER_PARAMS_RSYNC_SSH_OPTS` — [app.py:484](../../../app.py#L484)
+- `MINER_PARAMS_RSYNC_SSH_OPTS` — [app.py:718](../../../app.py#L718)
 - `SSH_OPTS` — [regbot.py:52](../../../79Miners/monitor/regbot.py#L52)
 
 Sharing the path means the params push and the RegBot probes use **one master per
@@ -48,7 +48,7 @@ multiplexing that was ~10 round-trips × 12–18 servers, every 20 seconds.
 `ControlPersist` keeps a master alive only for a while **after its last use**. With
 no traffic it expires, and then the next Confirm pays the full cold handshake again.
 
-`_miner_master_keepalive_worker()` ([app.py:787](../../../app.py#L787)) runs
+`_miner_master_keepalive_worker()` ([app.py:1025](../../../app.py#L1025)) runs
 `ssh <opts> host true` against every distinct miner IP every
 `MINER_PARAMS_KEEPALIVE_SECONDS`, resetting the persist timer.
 

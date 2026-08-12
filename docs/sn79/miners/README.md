@@ -1,6 +1,7 @@
 # The `/miners` page
 
-One HTML file, [templates/miners.html](../../../templates/miners.html), served at both
+One HTML file, [templates/miners.html](../../../templates/miners.html) (markup and
+CSS) plus [asset/miners.js](../../../asset/miners.js) (all the client logic), served at both
 `/` and `/miners`. Vanilla JS, Bootstrap 5, Chart.js, no build step.
 
 ## Feature docs

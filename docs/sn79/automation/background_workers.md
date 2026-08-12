@@ -1,7 +1,7 @@
 # Background workers
 
-Six long-running loops plus two one-shot startup tasks, all created in `lifespan()`
-([app.py:216](../../../app.py#L216)) and cancelled on shutdown.
+Eight long-running loops plus two one-shot startup tasks, all created in `lifespan()`
+and cancelled on shutdown.
 
 | Worker | Interval | Does |
 |---|---|---|
@@ -11,6 +11,13 @@ Six long-running loops plus two one-shot startup tasks, all created in `lifespan
 | `_miner_master_keepalive_worker` | 300s | re-warms SSH masters to every miner box |
 | `_regbot_balance_refresh_worker` | 300s | one chain child process, all coldkeys |
 | `_coldkeys_watch_worker` | 3600s | runs the coldkey/IP collector, diffs it |
+| `_metagraph_refresh_worker` | 90s | keeps netuid 79/71/88 metagraphs warm — a **request must never trigger the chain subprocess** |
+| `_regbot_active_scan_worker` | 20s | the SSH active-run scan across all 12 presets |
+
+The last two exist for one reason: they are the only two things a page load used to
+do that took seconds. Both are covered in
+[../performance/page_load_audit.md](../performance/page_load_audit.md) and
+[../performance/cache.md](../performance/cache.md) §6.
 
 One-shot at startup:
 
@@ -33,6 +40,19 @@ async def _worker():
 it never kills the worker for the life of the process. Every worker in this file
 follows it — keep new ones consistent.
 
+## Cadence has to sit under the consumer's staleness window
+
+`_metagraph_refresh_worker` runs at 90s against a 120s `METAGRAPH_CACHE_TTL`, and
+`_regbot_active_scan_worker` at 20s against the client's own 20s poll. Those numbers
+are not arbitrary — they are chosen so a warm copy never lapses between ticks. Raise
+`METAGRAPH_REFRESH_SECONDS` past 120 and the 2.9s chain subprocess is silently back
+on the request path, with nothing failing to tell you.
+
+The metagraph worker also refreshes its netuids **one at a time with a 2s gap**
+rather than gathering them. Each is a chain connection, and three at once is exactly
+the burst that made the balance sweep starve unrelated queries — see
+[../performance/chain_subprocess.md](../performance/chain_subprocess.md).
+
 ## Deferred imports
 
 Workers import their domain module *inside* the function body
@@ -54,13 +74,13 @@ without it, a fresh start would have no SN88 cache for a full hour.
 
 Note the names and the reality have drifted: `INVESTING88_SYNC_HOUR` (19) and
 `INVESTING88_SYNC_TZ` (`Asia/Tokyo`) are defined at
-[app.py:37-40](../../../app.py#L37-L40) but the worker just loops hourly and does not
+[app.py:42-44](../../../app.py#L42-L44) but the worker just loops hourly and does not
 consult them. The 19:00 Tokyo boundary lives inside
 `investing88_cache.py`'s day-keying instead.
 
 ## Cancellation
 
-Shutdown cancels all six and awaits them under `suppress(asyncio.CancelledError)`.
+Shutdown cancels all eight and awaits them under `suppress(asyncio.CancelledError)`.
 RegBot's `_run_batch` deliberately intercepts `CancelledError` first to leave its
 persisted state resumable — see [../regbot/batches.md](../regbot/batches.md).
 
@@ -74,6 +94,8 @@ persisted state resumable — see [../regbot/batches.md](../regbot/batches.md).
 | balance refresh | calls `chain_cli.py` child | substrate holds the GIL |
 | sim id | `asyncio.to_thread` | plain `urllib`, network-bound |
 | SSH keepalive | `asyncio.gather` of ssh subprocesses | pure I/O |
+| metagraph refresh | calls `load_metagraph.py` child | loads `bittensor` |
+| regbot active scan | `asyncio.gather` of ssh subprocesses | pure I/O, 12 boxes in parallel |
 
 The rule: **anything that imports `bittensor` runs out of process.** See
 [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
@@ -90,3 +112,16 @@ grep -E "refresh failed|watch failed|cache refresh failed" logs/dashboard-error.
 A worker that has been failing for weeks looks exactly like one that is working,
 from the dashboard. That is how the issue in
 [../tricks/known_issues.md](../tricks/known_issues.md) stayed unnoticed.
+
+Two of the new workers have a visible tell, at least. `X-Cache` on
+`/api/metagraph-data` and `/api/regbot/active` reports `hit`, `stale`, `miss` or
+`stale-error`:
+
+```bash
+curl -sI localhost:12800/api/metagraph-data?netuid=79 | grep -i x-cache
+curl -sI localhost:12800/api/regbot/active | grep -i x-cache
+```
+
+A persistent `stale` on either means its worker is wedged. That is still a manual
+check — a `/api/health` endpoint reporting last-success timestamps per worker remains
+the right fix for the class.

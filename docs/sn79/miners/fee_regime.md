@@ -13,8 +13,8 @@ Get this backwards and every conclusion inverts.
 
 | Path | Source |
 |---|---|
-| `GET /api/fee-regime?books=1&refresh=1` | [app.py:1493](../../../app.py#L1493) |
-| `GET /api/fee-regime/history?days=7&day=&uid=&limit=` | [app.py:1552](../../../app.py#L1552) |
+| `GET /api/fee-regime?books=1&refresh=1` | [app.py:1840](../../../app.py#L1840) |
+| `GET /api/fee-regime/history?days=7&day=&uid=&limit=&book_points=` | [app.py:1902](../../../app.py#L1902) |
 
 Backed by [fee_rate.py](../../../79Miners/monitor/fee_rate.py).
 
@@ -25,11 +25,40 @@ Backed by [fee_rate.py](../../../79Miners/monitor/fee_rate.py).
 1. **The `books` payload is never cached** — only the summary is. A `?books=1`
    request always goes upstream, and the resulting summary still populates the
    cache so a later summary-only request has something to serve.
-2. **`_cached_fallback()`** ([app.py:1511](../../../app.py#L1511)): if the upstream
+2. **`_cached_fallback()`** ([app.py:1858](../../../app.py#L1858)): if the upstream
    query fails or returns an error, the endpoint serves the last good summary with
    `stale: true` added rather than failing. A transient TAOS miss shows a slightly
    old regime instead of an empty panel. Only when there is *no* cached payload at
    all does it 502.
+
+## `book_points` — the parameter that makes history affordable
+
+`book_points` takes `all` (default), `latest` or `none`.
+
+The books chart reads exactly one thing out of `book_points`:
+
+```js
+var latestBookPoint = bookPoints[bookPoints.length - 1];
+booksPayload = latestBookPoint.books;
+```
+
+**Only the newest snapshot is ever plotted.** With `all`, one day of history is 128
+books x ~93 snapshots — 754KB, of which ~99% was downloaded, parsed and discarded.
+The UI now passes `book_points=latest`: **754KB → 30KB** raw, 171KB → 6KB gzipped.
+
+The default stays `all` so any script or ad-hoc query keeps the original shape.
+
+Two more things happen to this payload before it goes out:
+
+- **A byte cache** (`FEE_HISTORY_CACHE_SECONDS = 60`) keyed on
+  `(days, day, uid, limit, book_points)`. Building it costs ~135ms of event-loop
+  time; the underlying JSONL only grows once per fee-history append.
+- **Downsampling** to `FEE_HISTORY_MAX_POINTS` (600) per series, evenly spaced and
+  **always keeping the newest point** — a plain stride drops it whenever
+  `len % stride != 1`, and the last snapshot is what the "current" readouts use. At
+  `days=1` (~93 points) this does not engage; it matters from `days=30` up.
+  `point_count` / `book_point_count` describe what was shipped; `*_total` carries
+  the pre-downsample figure.
 
 ## Fetching the rates
 
