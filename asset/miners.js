@@ -18,6 +18,92 @@
   };
 })();
 
+// ---- Conditional fetching ------------------------------------------------
+//
+// Every JSON endpoint the dashboard polls carries a weak ETag, but fetch() was
+// never sending If-None-Match, so an unchanged 13KB payload was re-sent on every
+// poll. (Verified: the parser-loaded /js/miners.js revalidated and got a 304;
+// the fetch()-loaded /api/* calls did not.) So do the validation explicitly
+// rather than depending on browser cache heuristics.
+//
+// A 304 is the cheapest possible diff: ~150 bytes of headers and no body.
+//
+// The response *text* is cached rather than the parsed object, and re-parsed on
+// each 304. Handing back the same object every time would let one caller's
+// mutation corrupt what every later caller sees; re-parsing 60KB costs well
+// under a millisecond and keeps the semantics identical to a real fetch.
+// Survives a reload. Without this, every navigation starts with an empty
+// validator set and re-downloads every payload — measured at 59KB for a plain
+// F5 versus ~4KB when the tags carry over. sessionStorage rather than
+// localStorage so it is per-tab and disappears with it; a stale tag is harmless
+// either way, since the server answers 200 with the new body when it differs.
+var ETAG_STORE_KEY = "etagCache.v1";
+// Bounds are on the *decoded* text, which is several times the gzipped wire
+// size: the metagraph identity half is ~103KB of JSON that travels as ~20KB.
+// Typical sessionStorage quota is 5-10MB per origin, so ~1MB total is safe.
+var ETAG_STORE_MAX_ENTRY = 512 * 1024;
+var ETAG_STORE_MAX_TOTAL = 1024 * 1024;
+var etagCache = (function () {
+  try {
+    return JSON.parse(sessionStorage.getItem(ETAG_STORE_KEY)) || {};
+  } catch (e) {
+    return {};
+  }
+})();
+var etagStoreTimer = null;
+
+function persistEtagCache() {
+  if (etagStoreTimer) return; // coalesce a burst of loads into one write
+  etagStoreTimer = setTimeout(function () {
+    etagStoreTimer = null;
+    try {
+      var out = {};
+      var total = 0;
+      for (var k in etagCache) {
+        if (!Object.prototype.hasOwnProperty.call(etagCache, k)) continue;
+        var n = etagCache[k].text.length;
+        if (n > ETAG_STORE_MAX_ENTRY || total + n > ETAG_STORE_MAX_TOTAL) continue;
+        total += n;
+        out[k] = etagCache[k];
+      }
+      sessionStorage.setItem(ETAG_STORE_KEY, JSON.stringify(out));
+    } catch (e) {
+      // Quota exceeded or storage disabled: the in-memory cache still works.
+      try {
+        sessionStorage.removeItem(ETAG_STORE_KEY);
+      } catch (e2) {}
+    }
+  }, 1000);
+}
+
+function conditionalFetch(url) {
+  var prior = etagCache[url];
+  // cache: "no-store" so the browser does not layer its own revalidation on top
+  // of ours — we own the validator, and two of them disagreeing is a bug source.
+  var init = { cache: "no-store", headers: {} };
+  if (prior) init.headers["If-None-Match"] = prior.etag;
+  return fetch(url, init).then(function (r) {
+    if (r.status === 304 && prior) return JSON.parse(prior.text);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    var etag = r.headers.get("ETag");
+    return r.text().then(function (text) {
+      if (etag) {
+        etagCache[url] = { etag: etag, text: text };
+        persistEtagCache();
+      } else delete etagCache[url];
+      return JSON.parse(text);
+    });
+  });
+}
+
+function cachedEtagFor(url) {
+  return etagCache[url] ? etagCache[url].etag : null;
+}
+
+function dropEtag(url) {
+  delete etagCache[url];
+}
+
 // Data from backend: Bittensor Metagraph (netuid 88, finney)
 // Structure: incentives[hotkey]=decimal, hotkeyToUid[hotkey]=uid, hotkeyToColdkey[hotkey]=coldkey
 let minersArray = [];
@@ -122,7 +208,7 @@ let investing88ScoresMap = {};
 let investing88PrevScoresMap = {}; // previous-day scores for deltas
 let minerAgentInfo = {};
 let uidMetrics = {};
-let prevUidMetrics = {};
+let uidMetricDeltas = {};
 var bookVolumeLimit = 500000;
 var bookVolumeWarnRatio = 0.98;
 var DISPLAY_PARAM_KEYS = ["max_quantity", "min_quantity", "taker_ratio"];
@@ -262,33 +348,62 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 
-// ---- Background polling ----------------------------------------------------
+// ---- Background polling and change notifications ---------------------------
 //
 // Every one of these costs something on the server — the RegBot active scan in
 // particular used to be a 690ms SSH fan-out across 12 boxes, and it ran at this
-// cadence per open tab whether or not anyone was looking. So all polling stops
-// while the tab is hidden and catches up once when it comes back.
+// cadence per open tab whether or not anyone was looking. Three rules:
 //
-// pollWhenVisible() is the only place these intervals are created; adding a new
-// background poll anywhere else re-introduces the problem.
-var backgroundPollTimers = [];
+//   1. Nothing polls while the tab is hidden.
+//   2. When the /api/events stream is up, the server says when something
+//      changed, so the timers drop to a slow safety cadence. The stream is an
+//      optimisation, never the only path — if it dies, the timers carry on and
+//      the page keeps working exactly as it did before it existed.
+//   3. This scheduler is the only place background work is scheduled. Adding a
+//      bare setInterval elsewhere re-introduces the problem.
+var backgroundPolls = [];
+var pollScheduler = null;
+var eventStream = null;
+var eventStreamUp = false;
 
-function pollWhenVisible(fn, intervalMs) {
-  backgroundPollTimers.push(
-    setInterval(function () {
-      if (document.visibilityState === "visible") fn();
-    }, intervalMs),
-  );
+function pollWhenVisible(fn, fastMs, slowMs) {
+  backgroundPolls.push({
+    fn: fn,
+    fast: fastMs,
+    // Endpoints the server can't notify about keep their original cadence.
+    slow: slowMs || fastMs,
+    last: Date.now(),
+  });
+}
+
+function runDuePolls() {
+  if (document.visibilityState !== "visible") return;
+  var now = Date.now();
+  for (var i = 0; i < backgroundPolls.length; i++) {
+    var p = backgroundPolls[i];
+    var due = eventStreamUp ? p.slow : p.fast;
+    if (now - p.last >= due) {
+      p.last = now;
+      try {
+        p.fn();
+      } catch (e) {
+        console.warn("background poll failed:", e);
+      }
+    }
+  }
 }
 
 function startBackgroundPolling() {
-  pollWhenVisible(loadData, 5 * 60 * 1000);
-  pollWhenVisible(loadRegBotActiveRuns, 20000);
-  pollWhenVisible(loadBatchActiveRuns, 15000);
-  pollWhenVisible(loadUnstakeActiveRuns, 20000);
+  //                                     fast (no stream)   slow (stream up)
+  pollWhenVisible(loadData, 5 * 60 * 1000, 5 * 60 * 1000);
+  pollWhenVisible(loadRegBotActiveRuns, 20000, 120000);
+  pollWhenVisible(loadBatchActiveRuns, 15000, 120000);
+  pollWhenVisible(loadUnstakeActiveRuns, 20000, 120000);
   pollWhenVisible(function () {
     loadColdkeysSummary(false);
   }, 5 * 60 * 1000);
+
+  pollScheduler = setInterval(runDuePolls, 5000);
 
   // Coming back to a tab that has been hidden for a while should show current
   // data immediately rather than whatever was on screen when it was backgrounded.
@@ -299,6 +414,63 @@ function startBackgroundPolling() {
     loadUnstakeActiveRuns();
     if (Date.now() - lastDataLoadAt > 60000) loadData();
   });
+
+  startEventStream();
+}
+
+// Topic -> what to re-fetch, and the URL whose ETag tells us we already have it.
+var EVENT_TOPICS = {
+  regbot_active: { url: "/api/regbot/active", load: loadRegBotActiveRuns },
+  batch_active: { url: "/api/regbot/batch/active", load: loadBatchActiveRuns },
+  unstake_active: { url: "/api/unstake/active", load: loadUnstakeActiveRuns },
+  uid_metrics: { url: "/api/uid-metrics", load: loadUidMetrics },
+};
+
+var topicInFlight = {};
+
+function onServerChange(topic, etag) {
+  var entry = EVENT_TOPICS[topic];
+  if (!entry) return; // e.g. metagraph:<netuid>, which loadData owns
+  // Two endpoints publish from inside their own GET handler, so a notification
+  // can arrive before the fetch that caused it has stored its ETag. Without
+  // this guard that race turns one change into two or three fetches.
+  if (topicInFlight[topic]) return;
+  // Two endpoints publish from inside their own GET handler, so the tab that
+  // just fetched is told about its own result. Skipping a notification whose
+  // ETag we already hold stops that becoming a fetch loop, and stops other tabs
+  // re-fetching something they happen to be current on.
+  if (etag && cachedEtagFor(entry.url) === etag) return;
+  if (document.visibilityState !== "visible") return;
+  topicInFlight[topic] = true;
+  Promise.resolve(entry.load()).catch(function () {}).then(function () {
+    topicInFlight[topic] = false;
+  });
+}
+
+function startEventStream() {
+  if (!window.EventSource) return;
+  try {
+    eventStream = new EventSource("/api/events");
+  } catch (e) {
+    return;
+  }
+  eventStream.addEventListener("open", function () {
+    eventStreamUp = true;
+  });
+  eventStream.addEventListener("change", function (e) {
+    var msg;
+    try {
+      msg = JSON.parse(e.data);
+    } catch (err) {
+      return;
+    }
+    onServerChange(msg.topic, msg.etag);
+  });
+  eventStream.onerror = function () {
+    // EventSource reconnects on its own; until it does, the fast timers are the
+    // floor. Nothing here needs to retry, and nothing may throw.
+    eventStreamUp = false;
+  };
 }
 
 function loadColdkeys() {
@@ -766,20 +938,145 @@ function settled(p) {
   });
 }
 
+// ---- Metagraph: identity + state --------------------------------------
+//
+// Identity (hotkey <-> uid <-> coldkey, validator flags, IPs) only changes when
+// something registers or deregisters. State (emission, incentive, age, immunity)
+// changes every block. Fetched separately so identity answers 304 nearly always
+// and only the ~5KB state half actually moves; merged back into the single shape
+// processMetagraph() has always consumed, so nothing downstream changes.
+function metagraphIdentityUrl(netuid) {
+  return "/api/metagraph-identity?netuid=" + netuid;
+}
+function metagraphStateUrl(netuid) {
+  return "/api/metagraph-state?netuid=" + netuid;
+}
+
+function mergeMetagraph(identity, state) {
+  var order = identity.order || [];
+  var cols = state.cols || {};
+  function toMap(name, cast) {
+    var arr = cols[name] || {};
+    var out = {};
+    for (var i = 0; i < order.length; i++)
+      out[order[i]] = cast ? cast(arr[i]) : arr[i];
+    return out;
+  }
+  return {
+    hotkeyToUid: identity.hotkeyToUid || {},
+    uidToHotkey: identity.uidToHotkey || {},
+    hotkeyToColdkey: identity.hotkeyToColdkey || {},
+    coldkeyToHotkeys: identity.coldkeyToHotkeys || {},
+    isValidator: identity.isValidator || {},
+    uidToIp: identity.uidToIp || {},
+    immunityPeriod: identity.immunityPeriod,
+    totalNeurons: identity.totalNeurons,
+    error: identity.error,
+    emissions: toMap("emissions"),
+    incentives: toMap("incentives"),
+    minerAge: toMap("minerAge"),
+    isImmune: toMap("isImmune", Boolean),
+    netuid: state.netuid != null ? state.netuid : identity.netuid,
+    currentBlock: state.currentBlock,
+    alphaPriceTao: state.alphaPriceTao,
+    fetched_at: state.fetched_at,
+  };
+}
+
+function loadMetagraph(netuid) {
+  var identityUrl = metagraphIdentityUrl(netuid);
+  var stateUrl = metagraphStateUrl(netuid);
+  return Promise.all([
+    conditionalFetch(identityUrl),
+    conditionalFetch(stateUrl),
+  ])
+    .then(function (halves) {
+      var identity = halves[0];
+      var state = halves[1];
+      // State's arrays are positional against identity's `order`. If a refresh
+      // landed between the two requests, a stale identity would map every value
+      // onto the wrong hotkey — and a length check would not catch it, because
+      // one deregistration plus one registration keeps the count the same. The
+      // server stamps state with the identity ETag it was built from, so a
+      // mismatch is detectable; refetch identity unconditionally and merge that.
+      if (
+        state.identity_etag &&
+        cachedEtagFor(identityUrl) &&
+        state.identity_etag !== cachedEtagFor(identityUrl)
+      ) {
+        dropEtag(identityUrl);
+        return conditionalFetch(identityUrl).then(function (fresh) {
+          return mergeMetagraph(fresh, state);
+        });
+      }
+      return mergeMetagraph(identity, state);
+    });
+}
+
+function hideLoadingOverlay() {
+  var el = document.getElementById("loadingOverlay");
+  if (el) el.classList.remove("active");
+}
+
+// ---- Forced refresh ---------------------------------------------------------
+//
+// The Refresh button used to await /api/metagraph-data?refresh=1 before painting
+// anything, which froze the page for ~3s per click. Measured on the server:
+//
+//   0.8s  importing bittensor into a fresh subprocess
+//   2.1s  syncing the metagraph from finney
+//
+// None of that has to happen before the user sees a table. _metagraph_refresh_worker
+// keeps the server's copy under 90s old, so the warm halves are a good answer
+// immediately; the chain re-read runs behind the paint and the table updates again
+// when it lands. Same reasoning as the reg-cost timeout that used to blank the page:
+// one slow upstream must never hold the render hostage.
+var metagraphRereadInFlight = false;
+
+function setRefreshBusy(busy) {
+  // The button is the only visible sign that a re-read is still running. The page
+  // stays fully interactive throughout — this is a progress indicator, not a lock.
+  var btn = document.getElementById("refreshBtn");
+  if (!btn) return;
+  btn.disabled = busy;
+  btn.classList.toggle("refreshing", busy);
+}
+
+function forceMetagraphReread(netuid, onFresh) {
+  if (metagraphRereadInFlight) return; // double-click, or a poll landing on top
+  metagraphRereadInFlight = true;
+  setRefreshBusy(true);
+  // The response body is the old combined shape and is ignored: what matters is
+  // the side effect on the server's cache, which the halves below then read.
+  fetch("/api/metagraph-data?netuid=" + netuid + "&refresh=1", {
+    cache: "no-store",
+  })
+    .then(function () {
+      return loadMetagraph(netuid);
+    })
+    .then(function (fresh) {
+      // Dropped if the user changed subnet while the chain was being read —
+      // rendering netuid 79's metagraph into an 88 table would be worse than
+      // showing nothing new.
+      if (getSubnetFromInput() !== netuid) return;
+      onFresh(fresh);
+    })
+    .catch(function (err) {
+      console.warn("Forced metagraph re-read failed:", err);
+    })
+    .then(function () {
+      metagraphRereadInFlight = false;
+      setRefreshBusy(false);
+    });
+}
+
 function loadData(forceRefresh) {
   document.getElementById("loadingOverlay").classList.add("active");
-  var refreshBtn = document.getElementById("refreshBtn");
-  if (refreshBtn) refreshBtn.disabled = true;
+  setRefreshBusy(true);
   lastDataLoadAt = Date.now();
   var netuid = getSubnetFromInput();
-  var url = "/api/metagraph-data?netuid=" + netuid;
-  if (forceRefresh) url += "&refresh=1&t=" + Date.now();
 
-  fetch(url)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  loadMetagraph(netuid)
     .then(function (metagraphData) {
       processMetagraph(metagraphData);
       var afterLoad = function () {
@@ -788,57 +1085,90 @@ function loadData(forceRefresh) {
         filterTable();
         updateHighlightInfo();
       };
-      // Everything below the metagraph is independent of everything else below
-      // the metagraph: /api/uid-metrics is called with no uids, and reg-cost and
-      // alpha-price take only a netuid. Chaining them (which this used to do)
-      // bought nothing and cost three extra round trips — ~400ms on the same
-      // host, ~750ms from another continent. Fan out and wait for all of it.
-      var tail;
-      if (getSubnetFromInput() === 79) {
+
+      // Paint the table the moment the metagraph is in, and again as soon as the
+      // two feeds that add columns to it arrive. Everything else on this page
+      // owns its own panel and repaints itself.
+      //
+      // The old shape awaited *every* loader before painting anything. Observed
+      // 2026-08-12 with the chain endpoint refusing connections: /api/reg-cost
+      // sat for its full 120s timeout and the page showed nothing at all, even
+      // though the metagraph had already come back from the on-disk snapshot.
+      // One slow upstream must not be able to hold the table hostage.
+      afterLoad();
+      hideLoadingOverlay();
+
+      // Now that something is on screen, go ask the chain for a newer answer.
+      if (forceRefresh) {
+        forceMetagraphReread(netuid, function (fresh) {
+          processMetagraph(fresh);
+          afterLoad();
+        });
+      }
+
+      // Below the metagraph nothing depends on anything else: /api/uid-metrics is
+      // called with no uids, reg-cost and alpha-price take only a netuid. These
+      // used to be chained, which bought nothing and cost three extra round trips
+      // (~400ms same-host, ~750ms from another continent).
+      var tableFeeds = [];
+      var panels = [];
+      var subnet = getSubnetFromInput();
+      if (subnet === 79) {
         if (forceRefresh) loadRegBotBalances();
-        tail = Promise.all([
+        tableFeeds = [settled(loadMinerAgentInfo()), settled(loadUidMetrics())];
+        panels = [
           settled(loadFeeRegimePanel(forceRefresh)),
           settled(loadSimId()),
-          settled(loadMinerAgentInfo()),
-          settled(loadUidMetrics()),
           settled(loadSubnetRegCost(forceRefresh)),
           settled(loadAlphaPrice()),
-        ]);
-      } else if (getSubnetFromInput() === 88) {
+        ];
+      } else if (subnet === 88) {
         hideFeeRegimePanel();
         hideSimId();
         minerAgentInfo = {};
         uidMetrics = {};
-        tail = Promise.all([
-          settled(loadInvesting88Days(forceRefresh)),
+        uidMetricDeltas = {};
+        tableFeeds = [settled(loadInvesting88Days(forceRefresh))];
+        panels = [
           settled(loadSubnetRegCost(forceRefresh)),
           settled(loadAlphaPrice()),
-        ]);
+        ];
       } else {
         hideFeeRegimePanel();
         hideSimId();
         minerAgentInfo = {};
         uidMetrics = {};
+        uidMetricDeltas = {};
         investing88DaysMap = {};
         investing88ScoresMap = {};
         investing88PrevScoresMap = {};
-        tail = Promise.all([
+        panels = [
           settled(loadSubnetRegCost(forceRefresh)),
           settled(loadAlphaPrice()),
-        ]);
+        ];
       }
-      return tail.then(afterLoad);
+
+      // Repaint on the table feeds only; the panels must not gate the table.
+      var painted = Promise.all(tableFeeds).then(afterLoad);
+
+      // ...and the panels must not gate the *button* either. On a forced refresh
+      // `/api/fee-regime?refresh=1` and `/api/reg-cost?refresh=1` are real upstream
+      // calls — 2.2s of TAOS, 2.1s of chain — and each panel repaints itself the
+      // moment its own answer lands, showing its previous value until then. Waiting
+      // for them here left Refresh disabled for ~3s after the page was already
+      // current. Every panel is `settled()`, so none of these can reject.
+      Promise.all(panels);
+      return painted;
     })
     .catch(function (err) {
       console.error(err);
       alert("Failed to load data: " + err.message);
     })
     .finally(function () {
-      document
-        .getElementById("loadingOverlay")
-        .classList.remove("active");
-      var btn = document.getElementById("refreshBtn");
-      if (btn) btn.disabled = false;
+      hideLoadingOverlay();
+      // A forced re-read outlives this promise chain by design; it owns the
+      // button until it finishes.
+      if (!metagraphRereadInFlight) setRefreshBusy(false);
     });
 }
 
@@ -1201,20 +1531,12 @@ function loadFeeRegimePanel(forceRefresh) {
   // Neither fetch rejects: a failed live summary must NOT wipe the
   // history charts (they come from a separate, always-available source).
   return Promise.all([
-    fetch(summaryUrl)
-      .then(function (r) {
-        return r.ok ? r.json() : null;
-      })
-      .catch(function () {
-        return null;
-      }),
-    fetch(historyUrl)
-      .then(function (r) {
-        return r.ok ? r.json() : { global_points: [], book_points: [] };
-      })
-      .catch(function () {
-        return { global_points: [], book_points: [] };
-      }),
+    conditionalFetch(summaryUrl).catch(function () {
+      return null;
+    }),
+    conditionalFetch(historyUrl).catch(function () {
+      return { global_points: [], book_points: [] };
+    }),
   ]).then(function (results) {
     var summary = results[0];
     var history = results[1] || { global_points: [], book_points: [] };
@@ -1244,10 +1566,7 @@ function reloadFeeRegimePanel() {
 }
 
 function loadMinerAgentInfo() {
-  return fetch("/api/miner-params")
-    .then(function (r) {
-      return r.ok ? r.json() : { agents: {}, uids: [] };
-    })
+  return conditionalFetch("/api/miner-params")
     .then(function (data) {
       minerAgentInfo = data.agents || {};
       myMinerUids = data.uids || [];
@@ -1262,23 +1581,49 @@ function hasTrackedHistory(uid) {
   return myMinerUids.indexOf(Number(uid)) >= 0;
 }
 
+// The server sends columns plus ready-made deltas instead of a full duplicate
+// of the previous epoch's metrics (which was half the payload, and existed to
+// draw arrows on three fields). Rehydrate into the per-UID object shape the rest
+// of the file expects, so only this function knows about the wire format.
+function rehydrateUidMetrics(data) {
+  var uids = data.uids || [];
+  var fields = data.fields || [];
+  var cols = data.cols || {};
+  var metrics = {};
+  for (var i = 0; i < uids.length; i++) {
+    var row = {};
+    for (var f = 0; f < fields.length; f++) {
+      var name = fields[f];
+      var col = cols[name];
+      if (col) row[name] = col[i];
+    }
+    metrics[String(uids[i])] = row;
+  }
+  var deltas = {};
+  var dcols = data.deltas || {};
+  for (var k in dcols) {
+    if (!Object.prototype.hasOwnProperty.call(dcols, k)) continue;
+    for (var j = 0; j < uids.length; j++) {
+      var v = dcols[k][j];
+      if (v == null) continue;
+      var key = String(uids[j]);
+      (deltas[key] || (deltas[key] = {}))[k] = v;
+    }
+  }
+  return { metrics: metrics, deltas: deltas };
+}
+
 function loadUidMetrics(refresh) {
   var url = "/api/uid-metrics" + (refresh ? "?refresh=1" : "");
-  return fetch(url)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  return conditionalFetch(url)
     .then(function (data) {
-      if (
-        data.prev_metrics &&
-        Object.keys(data.prev_metrics).length > 0
-      ) {
-        prevUidMetrics = data.prev_metrics;
-      } else if (Object.keys(uidMetrics).length > 0) {
-        prevUidMetrics = uidMetrics;
-      }
-      uidMetrics = data.metrics || {};
+      // `metrics` means the server was asked for shape=full; nothing in the UI
+      // does that, but honour it rather than render an empty table if it happens.
+      var hydrated = data.metrics
+        ? { metrics: data.metrics, deltas: {} }
+        : rehydrateUidMetrics(data);
+      uidMetrics = hydrated.metrics;
+      uidMetricDeltas = hydrated.deltas;
       if (data.book_volume_limit != null)
         bookVolumeLimit = data.book_volume_limit;
       if (data.book_volume_warn_ratio != null)
@@ -1287,6 +1632,7 @@ function loadUidMetrics(refresh) {
     .catch(function (err) {
       console.warn("Failed to load UID metrics:", err);
       uidMetrics = {};
+      uidMetricDeltas = {};
     });
 }
 
@@ -1294,12 +1640,11 @@ function getUidMetrics(uid) {
   return uidMetrics[String(uid)] || uidMetrics[uid] || null;
 }
 function getMetricDelta(uid, key) {
-  var cur = getMetricValue(uid, key);
-  var prev = (prevUidMetrics[String(uid)] || prevUidMetrics[uid] || {})[
-    key
-  ];
-  if (cur == null || prev == null) return null;
-  return Number(cur) - Number(prev);
+  // Computed server-side against the previous epoch snapshot; see
+  // rehydrateUidMetrics. Only real_pnl, unrl_pnl and volume carry one.
+  var row = uidMetricDeltas[String(uid)] || uidMetricDeltas[uid];
+  if (!row || row[key] == null) return null;
+  return Number(row[key]);
 }
 function renderDeltaHtml(delta) {
   if (delta == null || delta === 0) return "";
@@ -3439,10 +3784,7 @@ function renderSubnetEmissions() {
 // every page load — and sum it client-side, for two numbers. The server already
 // holds those metagraphs warm, so it does the sum and ships ~100 bytes.
 function fetchSubnetEmissionBackground(netuid) {
-  fetch("/api/subnet-emission?netuid=" + netuid)
-    .then(function (r) {
-      return r.ok ? r.json() : null;
-    })
+  conditionalFetch("/api/subnet-emission?netuid=" + netuid)
     .then(function (data) {
       if (!data) return;
       subnetEmissions[netuid] = data.emission || 0;
@@ -4331,16 +4673,25 @@ function loadRegBotBalances() {
   );
 }
 
+// The server used to ship this per UID alongside reg_block and the current
+// block it was already sending. Same number, one subtraction.
+function metricsBlocksSinceRegistration(metrics) {
+  if (!metrics) return null;
+  if (metrics.blocks_since_registration != null)
+    return Number(metrics.blocks_since_registration);
+  if (metrics.reg_block != null && currentBlock)
+    return Math.max(0, currentBlock - Number(metrics.reg_block));
+  return null;
+}
+
 function renderRegDateCell(uid) {
   var metrics = getUidMetrics(uid) || {};
   var formatted = formatRegDateDisplay(metrics);
   if (!formatted) return '<span class="metric-empty">—</span>';
   var title = formatted.title;
-  if (metrics.blocks_since_registration != null) {
-    title +=
-      " · " +
-      Number(metrics.blocks_since_registration).toLocaleString() +
-      " blocks ago";
+  var since = metricsBlocksSinceRegistration(metrics);
+  if (since != null) {
+    title += " · " + since.toLocaleString() + " blocks ago";
   }
   var html =
     '<span class="reg-date-cell" title="' +
@@ -7030,11 +7381,7 @@ function loadRegBotActiveRuns(force) {
     document.getElementById("regbotActiveBar").style.display = "none";
     return;
   }
-  fetch("/api/regbot/active" + (force ? "?refresh=1" : ""))
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  conditionalFetch("/api/regbot/active" + (force ? "?refresh=1" : ""))
     .then(renderRegbotActiveBar)
     .catch(function () {
       // Silent — this is a background poll, not a user-initiated action.
@@ -7140,11 +7487,7 @@ function loadBatchActiveRuns() {
     document.getElementById("batchActiveBar").style.display = "none";
     return;
   }
-  fetch("/api/regbot/batch/active")
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  conditionalFetch("/api/regbot/batch/active")
     .then(renderBatchActiveBar)
     .catch(function () {
       // Silent — background poll, not a user-initiated action.
@@ -7231,11 +7574,7 @@ function loadUnstakeActiveRuns() {
     document.getElementById("unstakeActiveBar").style.display = "none";
     return;
   }
-  fetch("/api/unstake/active")
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  conditionalFetch("/api/unstake/active")
     .then(renderUnstakeActiveBar)
     .catch(function () {
       // Silent — this is a background poll, not a user-initiated action.
@@ -7326,11 +7665,7 @@ function loadColdkeysSummary(showLoadingState) {
     document.getElementById("coldkeysSummaryLine").textContent =
       "Loading…";
   }
-  fetch("/api/coldkeys/summary")
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  conditionalFetch("/api/coldkeys/summary")
     .then(renderColdkeysSummary)
     .catch(function (err) {
       if (showLoadingState) {

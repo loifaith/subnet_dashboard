@@ -1,8 +1,11 @@
 # Volume auto-switcher
 
-> ⚠️ **This module currently fails to import.** See
-> [../tricks/known_issues.md](../tricks/known_issues.md). Everything below describes
-> the intended behaviour, which has not run since ~2026-07-21.
+> ⚠️ **Working but disabled.** The import bug that killed this module on 2026-07-20
+> was fixed on 2026-08-12; it is now held off by `HOT_BOOK_AUTO_SWITCH=0` in
+> [ecosystem.config.json](../../../ecosystem.config.json) rather than by a crash,
+> because the fleet has not been auto-switched in 23 days and the first run could
+> move a lot of miners at once. Read
+> [../tricks/known_issues.md](../tricks/known_issues.md) before turning it back on.
 
 [79Miners/monitor/volume_agent_switcher.py](../../../79Miners/monitor/volume_agent_switcher.py)
 
@@ -39,16 +42,23 @@ gap doesn't freeze the switcher permanently.
 
 `AUTO_SWITCH_EXEMPT_AGENTS` (env `VOLUME_SWITCH_EXEMPT_AGENTS`) is a set of agent
 names that must never be auto-switched away — strategies where hot books are
-expected or the switch would be counterproductive. Intended members:
+expected or the switch would be counterproductive. Members:
 `RandomMakerAgentHarvester`, `WarriorAgent`, `SpearAgent`, `OFTAgent`, `CBSAgent`,
 `COCAgent`.
 
-**This is the line that is broken** — see the known-issues doc.
+This was the line that broke the module: the six names were passed as six arguments
+to `os.getenv`, which takes two. It is one comma-separated default now.
 
 ## Kill switch
 
 `HOT_BOOK_AUTO_SWITCH=0` (or `false`/`no`/`off`) disables the whole thing.
-`maybe_switch_hot_miners_to_free_all` returns `[]` immediately.
+`maybe_switch_hot_miners_to_free_all` returns `[]` immediately. **This is its
+current state**, set in `ecosystem.config.json`. Note that `pm2 restart dashboard
+--update-env` does not re-read that file — use
+`pm2 restart ecosystem.config.json --only dashboard --update-env`.
+
+A failure in this module can no longer fail the daily-status refresh that calls it:
+the call site wraps it in `try` and records `agent_switches: {"error": ...}`.
 
 ## Every skip is explicit
 

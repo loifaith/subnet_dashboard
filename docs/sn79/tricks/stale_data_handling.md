@@ -50,7 +50,7 @@ It early-exits if nothing is missing, so the common path costs one comprehension
 
 ## 3. Fee regime — serve the last good summary
 
-`_cached_fallback()` ([app.py:1858](../../../app.py#L1858)) returns the cached
+`_cached_fallback()` ([app.py:2408](../../../app.py#L2408)) returns the cached
 summary with `stale: true` added when the upstream query fails or reports an error.
 Only when there is no cached payload at all does it 502.
 

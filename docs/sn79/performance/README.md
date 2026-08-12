@@ -9,9 +9,10 @@ micro-optimisation. The measurements are preserved in the source comments.
 | [ssh_multiplexing.md](ssh_multiplexing.md) | 125–160 ms RTT × ~10 handshake round-trips per operation | one persistent master per box, kept warm; **3.0 s → 0.5 s** per params push |
 | [cache.md](cache.md) | expensive data on every page load | seven caching layers, each matched to its data's shape |
 | [concurrent_processing.md](concurrent_processing.md) | one event loop, many slow remote things | subprocess vs. thread vs. task, and where serial is deliberate |
+| [wire_protocol.md](wire_protocol.md) | **measured 2026-08-12**: 4.17 KB/min per idle tab, 59 KB to reload, half of two payloads unread | conditional requests, payload surgery, metagraph split, SSE — **0.38 KB/min, 6.3 KB reload** |
 | [page_load_audit.md](page_load_audit.md) | **measured 2026-08-11**: homepage usable in 1.13s local, 2.87s remote, 5.8s on a cold metagraph; 1.8MB uncompressed | all eleven findings fixed — **411ms / 1.65s, 297KB**, no cold cliff |
 
-## The four rules
+## The five rules
 
 1. **GIL-bound work goes in a subprocess. I/O-bound work goes in a thread.**
    Getting this backwards is what caused the 13.7 s stalls, and `asyncio.to_thread`
@@ -31,7 +32,12 @@ micro-optimisation. The measurements are preserved in the source comments.
    path is a memory lookup. **Nothing a browser asks for may open a chain connection
    or an SSH connection.**
 
-4. **A payload nobody reads is not free.** `/api/fee-regime/history` shipped 754KB so
+4. **Revalidate instead of re-sending.** Every cached read path carries a weak
+   ETag and the client sends `If-None-Match`; an unchanged poll is ~150 bytes. A
+   generation timestamp inside the body silently defeats this — tag the data, not
+   the clock (`_serialize_json(payload, etag_over=...)`).
+
+5. **A payload nobody reads is not free.** `/api/fee-regime/history` shipped 754KB so
    the chart could use the last 10KB of it; two full metagraphs (300KB) were fetched
    to render two numbers. Check what the consumer actually reads before optimising
    how fast you can send it.

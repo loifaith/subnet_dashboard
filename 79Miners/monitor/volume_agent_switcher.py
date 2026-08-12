@@ -35,7 +35,13 @@ AUTO_SWITCH_ENABLED = os.getenv("HOT_BOOK_AUTO_SWITCH", "1").lower() not in (
 IMMUNITY_PERIOD_BLOCKS = 7200
 AUTO_SWITCH_EXEMPT_AGENTS: set = {
     a.strip()
-    for a in os.getenv("VOLUME_SWITCH_EXEMPT_AGENTS", "RandomMakerAgentHarvester", "WarriorAgent", "SpearAgent", "OFTAgent", "CBSAgent", "COCAgent").split(",")
+    # One comma-separated default, not six arguments: os.getenv takes at most two,
+    # so the six-arg form raised TypeError at import and took the whole module —
+    # and with it every daily-status refresh — down with it.
+    for a in os.getenv(
+        "VOLUME_SWITCH_EXEMPT_AGENTS",
+        "RandomMakerAgentHarvester,WarriorAgent,SpearAgent,OFTAgent,CBSAgent,COCAgent",
+    ).split(",")
     if a.strip()
 }
 

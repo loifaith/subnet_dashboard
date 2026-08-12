@@ -10,7 +10,9 @@ or move TAO.**
 Responses are gzipped above 1KB, and the cached read paths carry a weak `ETag` with
 `Cache-Control: no-cache` — send `If-None-Match` and an unchanged payload answers
 `304` with no body. Endpoints backed by a background worker also set `X-Cache:
-hit|stale|miss|stale-error`. See
+hit|stale|miss|stale-error|hit-coalesced`. `hit-coalesced` answers a `?refresh=1`
+that arrived within one block (12s) of the last real read — the chain cannot have
+changed, so the 2-3s upstream call is skipped. See
 [sn79/performance/page_load_audit.md](sn79/performance/page_load_audit.md).
 
 ## Pages
@@ -30,8 +32,10 @@ hit|stale|miss|stale-error`. See
 |---|---|---|---|
 | GET | `/api/metagraph-data` | `netuid`, `refresh` | [metagraph_view](sn79/miners/metagraph_view.md) |
 | GET | `/api/subnet-emission` | `netuid` | total non-validator emission + alpha price, off the warm metagraph |
+| GET | `/api/metagraph-identity` | `netuid` | hotkey/uid/coldkey maps + `order`; changes only on registration churn |
+| GET | `/api/metagraph-state` | `netuid` | per-block values, columnar against `order`, with the `identity_etag` they match |
 | GET | `/api/uid-status/{uid}` | `books`, `refresh` | [uid_status](sn79/miners/uid_status.md) |
-| GET | `/api/uid-metrics` | `uids`, `refresh` | [uid_status](sn79/miners/uid_status.md) |
+| GET | `/api/uid-metrics` | `uids`, `refresh`, `shape` | [uid_status](sn79/miners/uid_status.md) |
 | GET | `/api/miner-history` | — | [miner_history](sn79/miners/miner_history.md) |
 | GET | `/api/miner-history/{uid}` | `days` (1–90), `day`, `limit` | ″ |
 | GET | `/api/agent-history/{uid}` | `limit` (1–500) | ″ |
@@ -123,6 +127,16 @@ No authentication; CORS open. Consumed by the miner boxes.
 per point), `latest` (only the newest, which is all the books chart plots), `none`.
 `latest` is the difference between a 754KB and a 30KB response; the UI uses it.
 
+**`/api/uid-metrics?shape=`** — `slim` (default) returns columns plus ready-made
+deltas; `full` returns the original per-UID objects and `prev_metrics`, for readers
+outside the dashboard. Slim is 23 KB gzipped against 58 KB.
+
+**`POST /api/regbot/balance/refresh`** — reads the worker-maintained
+`balance_cache.json` and returns immediately (`cache: hit`), kicking a sweep behind
+the response only if the file is older than `REGBOT_BALANCE_CACHE_SECONDS`
+(`cache: stale`). Add `?wait=1` to block on a live 12-coldkey sweep (~3s) when you
+need the new numbers before continuing.
+
 **`/api/regbot/active?refresh=1`** — forces the SSH fan-out across all 12 presets
 instead of reading `_regbot_active_scan_worker`'s last result. ~690ms vs ~1ms. Use it
 only right after an action that changed what is running. **Never from a poll.**
@@ -132,6 +146,7 @@ only right after an action that changed what is running. **Never from a poll.**
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/js/miners.js` | the page's client code; ETag'd, revalidated, not under `/asset` |
+| GET | `/api/events` | Server-Sent Events change notifications (`event: change`, `{topic, etag}`) |
 
 ## Error conventions
 

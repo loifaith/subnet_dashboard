@@ -240,9 +240,19 @@ def refresh_daily_status() -> dict:
 
     history_path = append_my_miners_history(metrics, current_block=current_block)
 
-    from volume_agent_switcher import maybe_switch_hot_miners_to_free_all
+    # Every file this function exists to write is already on disk by here, so the
+    # switcher — an optional side effect — must not be able to fail the refresh.
+    # A TypeError in its module-level env parsing did exactly that from 2026-07-20
+    # to 2026-08-12: the caller saw an exception, logged "Miner status cache refresh
+    # failed" every 900s, and never reached its cache-invalidate and SSE publish,
+    # even though the data had been written correctly.
+    try:
+        from volume_agent_switcher import maybe_switch_hot_miners_to_free_all
 
-    agent_switches = maybe_switch_hot_miners_to_free_all(metrics)
+        agent_switches = maybe_switch_hot_miners_to_free_all(metrics)
+    except Exception as exc:  # noqa: BLE001 - report, never propagate
+        logger.error("Volume agent switcher skipped: %s", exc, exc_info=True)
+        agent_switches = {"error": str(exc)}
     return {
         "path": path,
         "history_path": history_path,

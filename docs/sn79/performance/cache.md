@@ -14,6 +14,8 @@ which one applies tells you how stale a number on screen can be.
 | 5 | Permanent keyed cache | registration cost by block |
 | 6 | **Worker-owned, stale-while-revalidate** | metagraph, RegBot active-run scan |
 | 7 | **Serialised-byte cache + weak ETag** | miner params, uid metrics, fee history, the poll endpoints |
+| 8 | **Client-side validator cache** | every endpoint the page fetches, persisted across reloads |
+| 9 | **On-disk snapshot, seeded at startup** | metagraph |
 
 Layers 6 and 7 were added on 2026-08-11 —
 [page_load_audit.md](page_load_audit.md) has the before/after measurements and the
@@ -75,7 +77,7 @@ in the UI.
 `/api/regbot/balance` reads the file — but falls through to a **live fetch** when
 the file has no entry for that server yet (right after a fresh deploy, before the
 worker's first pass), so the UI is never stuck empty
-([app.py:2445-2452](../../../app.py#L2445-L2452)).
+([app.py:1881](../../../app.py#L1881)).
 
 `POST /api/regbot/balance/refresh` forces the sweep immediately; the UI calls it on
 a manual page refresh so the spend modals always show current numbers.
@@ -96,13 +98,18 @@ worker owns the key's freshness, and the request path does a lookup.
 |---|---|---|---|
 | `_metagraph_cache` | `_metagraph_refresh_worker` | `METAGRAPH_REFRESH_SECONDS` = 90s | a 2.9s chain subprocess |
 | `_regbot_active_state` | `_regbot_active_scan_worker` | `REGBOT_ACTIVE_SCAN_SECONDS` = 20s | a 690ms SSH fan-out across 12 boxes |
+| `_fee_regime_cache` | `_fee_regime_refresh_worker` | `FEE_REGIME_REFRESH_SECONDS` = 240s | a 2.2s TAOS query |
+| `_reg_cost_cache` | `_reg_cost_refresh_worker` | `REG_COST_REFRESH_SECONDS` = 240s | a 2.1s chain query |
+| `balance_cache.json` | `_regbot_balance_refresh_worker` | `REGBOT_BALANCE_CACHE_SECONDS` = 300s | a 3-15s sweep of 12 coldkeys |
 
 Three properties make this work, and all three matter:
 
 - **The cadence sits under the staleness window.** 90s against a 120s
   `METAGRAPH_CACHE_TTL`, so a warm copy never lapses in normal operation. Raising
-  `METAGRAPH_REFRESH_SECONDS` past the TTL silently puts the 2.9s subprocess back on
-  the request path.
+  `METAGRAPH_REFRESH_SECONDS` past the TTL means every copy reads as stale.
+  The sleep is a **deadline measured from the start of the tick**
+  (`_sleep_until_next_tick`), not a flat sleep after the work — otherwise the real
+  cadence is `interval + work`, which was 105s here, not 90s.
 - **Single-flight.** `_refresh_metagraph()` shares one `asyncio.Task` per netuid and
   `shield`s it, so the worker and a cold request never spawn two subprocesses, and a
   browser hanging up mid-request can't cancel a load others are awaiting.
@@ -115,17 +122,37 @@ The escape hatch is `?refresh=1`, and it is only for user actions that just chan
 the underlying reality — killing a run, triggering a registration. **A background
 poll must never pass it**, or the fan-out it exists to avoid is back.
 
+### `?refresh=1` is coalesced to block time
+
+A forced read landing within `CHAIN_BLOCK_SECONDS` (12s, one block) of the last
+successful one returns the cached bytes as `X-Cache: hit-coalesced`. The chain has
+produced no new state inside a block, so re-reading spends 2.9s to reproduce
+identical numbers. Applies to `/api/metagraph-data`, `/api/fee-regime` and
+`/api/reg-cost`; each records `loaded_at` alongside `expires_at` because "when does
+this lapse" and "how old is it" are different questions.
+
+This is a latency fix, never a staleness trade — past the window the read is real.
+And the caller must not block on it either: see
+[wire_protocol.md](wire_protocol.md#the-refresh-button-was-the-last-blocking-path).
+
 ## 7. Serialised-byte caches and weak ETags
 
 One fork-mode uvicorn process means `json.dumps` of a 275KB payload is 44ms of stall
 for *every* concurrent request, not just the one paying for it. So these caches hold
 `(bytes, etag)`, not dicts — a warm request neither reads disk nor serialises.
 
-| Cache | TTL | Invalidated by |
+| Cache | Keyed on | TTL |
 |---|---|---|
-| `_miner_params_cache` | `MINER_PARAMS_CACHE_SECONDS` = 30s | **`_save_miner_params_file()`, explicitly** |
-| `_uid_metrics_cache` | `UID_METRICS_CACHE_SECONDS` = 30s | `?refresh=1` |
-| `_fee_history_cache` | `FEE_HISTORY_CACHE_SECONDS` = 60s | TTL only |
+| `_miner_params_cache` | `(name, mtime, size)` of every params file | 3600s backstop |
+| `_uid_metrics_cache` | mtimes of the daily-status + prev-epoch files | 3600s backstop |
+| `_fee_history_cache` | the query shape | `FEE_HISTORY_CACHE_SECONDS` = 60s |
+
+The first two are keyed on an **exact change signal, not a clock**. A 30s TTL there
+was actively harmful: it discarded a valid result every 30s and made the next caller
+pay a 718ms rebuild for data the 900s worker changes four times an hour. Checking the
+signal costs two `stat()` calls, or a stat-only `scandir` pass (~1ms for 200 files).
+`_save_miner_params_file()` still invalidates explicitly, because that path should
+not wait even one `stat()` to reflect a save the user just watched succeed.
 
 Primitives, at the top of [app.py](../../../app.py):
 
@@ -144,6 +171,30 @@ to be invalidated by the writer. `_save_miner_params_file()` calls
 `_miner_params_cache.invalidate()`. Any new writer of `79Miners/params/` must too, or
 the agent column keeps showing the pre-edit value for up to 30s after a successful
 save.
+
+## 8. The client's validator cache
+
+Layer 7 gives every cached read path an `ETag`. Layer 8 is the half that collects
+on it: `conditionalFetch()` keeps `{etag, text}` per URL, sends `If-None-Match`, and
+re-parses its stored text on a 304. It is persisted to `sessionStorage`, which is
+what makes a **reload** cheap (59 KB → 6.3 KB) rather than only a poll.
+
+This exists because `fetch()` was not revalidating at all — verified: the
+parser-loaded `/js/miners.js` got a 304 while every `fetch()`-loaded `/api/*` call
+re-downloaded its body. The client owns the validator explicitly rather than relying
+on browser cache heuristics, and sets `cache: "no-store"` so the two do not disagree.
+
+Full detail, including the two timestamp fields that were silently defeating it:
+[wire_protocol.md](wire_protocol.md).
+
+## 9. The metagraph's on-disk snapshot
+
+Every successful load is written to `miner_status/metagraph_<netuid>.json`, and
+`lifespan()` seeds the cache from those files **synchronously before the first
+request**. Without it, a `pm2 restart` during a chain outage leaves the dashboard
+with nothing to render at all — observed 2026-08-12, when the finney entrypoint
+stopped accepting websocket connections. Seeded entries keep their original
+timestamp, so they read as stale and the first request refreshes behind itself.
 
 ## Serving stale on purpose
 
@@ -168,3 +219,5 @@ zero. See [../tricks/stale_data_handling.md](../tricks/stale_data_handling.md).
 6. Does anything in this process write the underlying data? → **invalidate at the
    write**, don't rely on the TTL.
 7. Does a miss render an empty panel? → add a **stale fallback**.
+8. Would a restart during an upstream outage leave it with nothing? → **persist the
+   last good value** and seed it synchronously at startup.

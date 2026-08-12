@@ -45,7 +45,7 @@ The HTTP request returns after step 6. Registration itself can legitimately run 
 | `POST /api/regbot/batch/*` | see [batches.md](batches.md) |
 
 Request bodies are Pydantic models with `extra="forbid"`
-([app.py:2310-2318](../../../app.py#L2310-L2318)) — an unexpected field is a 400, not
+([app.py:2898](../../../app.py#L2898)) — an unexpected field is a 400, not
 a silently ignored typo.
 
 ## Validation

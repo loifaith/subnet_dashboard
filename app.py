@@ -85,8 +85,29 @@ METAGRAPH_WARM_NETUIDS = [
 # presets, polled by every open tab. Run it once here instead, so the cost stops
 # scaling with the number of dashboards open.
 REGBOT_ACTIVE_SCAN_SECONDS = int(os.getenv("REGBOT_ACTIVE_SCAN_SECONDS", "20"))
-MINER_PARAMS_CACHE_SECONDS = float(os.getenv("MINER_PARAMS_CACHE_SECONDS", "30"))
-UID_METRICS_CACHE_SECONDS = float(os.getenv("UID_METRICS_CACHE_SECONDS", "30"))
+# Two more upstreams that were still request-driven. Both have a 300s TTL and the
+# page reloads every 300s, so *every* automatic refresh landed exactly on expiry
+# and paid the full cost: measured 2.24s for the TAOS fee-regime query and 2.13s
+# for the reg-cost chain query, which is what a browser reports as 3-4s of
+# "waiting for server response". Refresh under the TTL so a warm copy never lapses.
+FEE_REGIME_REFRESH_SECONDS = int(os.getenv("FEE_REGIME_REFRESH_SECONDS", "240"))
+REG_COST_REFRESH_SECONDS = int(os.getenv("REG_COST_REFRESH_SECONDS", "240"))
+# A forced refresh (?refresh=1) landing within one block of the last successful
+# read cannot return a different answer — the chain has not produced new state —
+# so it is pure latency: ~2.9s for the metagraph, ~2.2s for reg cost. This window
+# collapses a double-click, several tabs hitting Refresh together, and a reload
+# followed immediately by the button. It never serves data from an older block.
+CHAIN_BLOCK_SECONDS = int(os.getenv("CHAIN_BLOCK_SECONDS", "12"))
+REG_COST_WARM_NETUIDS = [
+    int(x) for x in os.getenv("REG_COST_WARM_NETUIDS", "79,88").split(",") if x.strip()
+]
+# Both of these are keyed on an exact change signal (a file mtime, a directory
+# fingerprint), not on elapsed time, so the TTL is only a long backstop. A short
+# TTL here was actively harmful: it threw away a valid result every 30s and made
+# the next caller pay the full rebuild — measured 718ms for the uid-metrics read
+# and ~100ms for the 200-file params scan, for data that changes every 900s.
+MINER_PARAMS_CACHE_SECONDS = float(os.getenv("MINER_PARAMS_CACHE_SECONDS", "3600"))
+UID_METRICS_CACHE_SECONDS = float(os.getenv("UID_METRICS_CACHE_SECONDS", "3600"))
 FEE_HISTORY_CACHE_SECONDS = float(os.getenv("FEE_HISTORY_CACHE_SECONDS", "60"))
 # The fee charts are a few hundred CSS px wide; a day of raw snapshots was 476KB,
 # roughly an order of magnitude more points than the chart has pixels.
@@ -124,14 +145,11 @@ _alpha_price_cache: dict[int, dict[str, Any]] = {}
 # with a weak ETag. An unchanged re-poll then costs a 304 — no body, no gzip pass.
 
 
-def _serialize_json(payload: Any) -> tuple[bytes, str]:
-    """Serialise once; derive a weak ETag from the resulting bytes.
-
-    Same json.dumps settings FastAPI's JSONResponse uses, so a handler switched to
-    this produces byte-identical output. `default=str` is a safety net for the
-    datetimes that jsonable_encoder used to absorb.
-    """
-    body = json.dumps(
+def _dumps(payload: Any) -> bytes:
+    """Same json.dumps settings FastAPI's JSONResponse uses, so a handler switched
+    to the byte-cache path produces byte-identical output. `default=str` is a
+    safety net for the datetimes jsonable_encoder used to absorb."""
+    return json.dumps(
         payload,
         ensure_ascii=False,
         allow_nan=False,
@@ -139,7 +157,24 @@ def _serialize_json(payload: Any) -> tuple[bytes, str]:
         separators=(",", ":"),
         default=str,
     ).encode("utf-8")
-    return body, 'W/"%s"' % hashlib.blake2b(body, digest_size=12).hexdigest()
+
+
+def _serialize_json(payload: Any, etag_over: Any = None) -> tuple[bytes, str]:
+    """Serialise once; derive a **weak** ETag.
+
+    `etag_over` exists because a "when did we last look" timestamp in the body
+    changes on every worker tick even when the answer is identical, which defeats
+    revalidation entirely — measured: `/api/regbot/active` re-sent its 353-byte
+    payload on every poll purely because of its own `updated_at`. Passing the
+    payload minus that field makes the tag track *the data*, not the clock.
+
+    A weak validator is exactly the right tool: `W/` means "semantically
+    equivalent", not "byte-identical", so a 304 that leaves the client holding a
+    slightly older `updated_at` is correct by the spec, not a fudge.
+    """
+    body = _dumps(payload)
+    basis = body if etag_over is None else _dumps(etag_over)
+    return body, 'W/"%s"' % hashlib.blake2b(basis, digest_size=12).hexdigest()
 
 
 def _etag_matches(request: Request, etag: str) -> bool:
@@ -191,6 +226,43 @@ class _ByteCache:
 
     def invalidate(self) -> None:
         self._entries.clear()
+
+
+# ---- Change notifications (Server-Sent Events) -----------------------------
+#
+# The workers already know the instant a payload changes; the browser was finding
+# out up to 20s later by asking. So they publish a one-line "topic X is now at
+# etag Y" and the client re-fetches *that* endpoint conditionally.
+#
+# Push the notification, pull the data. The alternative — pushing payloads down
+# the stream — would mean a second serialisation path per topic, per-connection
+# state, and no ETag/gzip on the hot bytes. This way the existing cached-byte
+# handlers stay the single source of truth and a notification costs ~60 bytes.
+#
+# SSE rather than WebSocket on purpose: this traffic is strictly one-directional
+# (every write is already an ordinary POST), and SSE gets auto-reconnect, plain
+# HTTP, and the existing session cookie for free with no framing library.
+_sse_subscribers: set[asyncio.Queue] = set()
+SSE_HEARTBEAT_SECONDS = float(os.getenv("SSE_HEARTBEAT_SECONDS", "20"))
+# Per-subscriber bound. A client too slow to drain 32 notifications is not going
+# to be rescued by buffering more; drop it and let EventSource reconnect, which
+# re-syncs via the conditional fetch anyway.
+SSE_QUEUE_MAX = 32
+_sse_topic_etags: dict[str, str] = {}
+
+
+def _publish(topic: str, etag: str) -> None:
+    """Announce that `topic` changed. Safe to call from any worker; never raises."""
+    _sse_topic_etags[topic] = etag
+    if not _sse_subscribers:
+        return
+    message = {"topic": topic, "etag": etag}
+    for queue in list(_sse_subscribers):
+        try:
+            queue.put_nowait(message)
+        except asyncio.QueueFull:
+            # Drop the slow subscriber rather than let it back up the workers.
+            _sse_subscribers.discard(queue)
 
 
 async def _swallow(coro) -> None:
@@ -245,6 +317,10 @@ async def _miner_status_refresh_worker() -> None:
     while True:
         try:
             await _run_status_refresh_subprocess()
+            # The daily-status file has just been rewritten, so the byte cache is
+            # stale by definition and every open tab wants to know.
+            _uid_metrics_cache.invalidate()
+            _publish("uid_metrics", "refreshed:%d" % int(time.time()))
         except Exception as exc:
             logger.error("Miner status cache refresh failed: %s", exc)
         await asyncio.sleep(MINER_STATUS_REFRESH_SECONDS)
@@ -285,18 +361,49 @@ async def _investing88_daily_sync_worker() -> None:
             logger.error("Investing88 cache sync failed: %s", exc)
 
 
+_regbot_balance_inflight: dict[str, "asyncio.Task"] = {}
+
+
+async def _refresh_regbot_balances() -> dict:
+    """Single-flight around regbot.refresh_balance_cache().
+
+    Without it, the worker and every open tab that hits
+    POST /api/regbot/balance/refresh each spawn their own chain_cli, and each of
+    those opens its own substrate connection. That burst — several metadata
+    decodes at once — is the documented worst source of latency on this service.
+    Shielded so a browser hanging up mid-request cannot cancel a sweep the worker
+    and other tabs are waiting on.
+    """
+    from regbot import refresh_balance_cache
+
+    task = _regbot_balance_inflight.get("all")
+    if task is None or task.done():
+        task = asyncio.create_task(refresh_balance_cache())
+        _regbot_balance_inflight["all"] = task
+    return await asyncio.shield(task)
+
+
+def _balance_cache_age() -> float:
+    """Seconds since the balance cache file was last written, or inf if absent."""
+    from regbot import BALANCE_CACHE_PATH
+
+    try:
+        return time.time() - os.path.getmtime(BALANCE_CACHE_PATH)
+    except OSError:
+        return float("inf")
+
+
 async def _regbot_balance_refresh_worker() -> None:
     """Refresh every RegBot coldkey's balance to a file every
     REGBOT_BALANCE_CACHE_SECONDS, so /api/regbot/balance reads are served
     from disk instead of blocking on a live chain call per request."""
-    from regbot import refresh_balance_cache
-
     while True:
+        started = time.time()
         try:
-            await refresh_balance_cache()
+            await _refresh_regbot_balances()
         except Exception as exc:
             logger.error("RegBot balance cache refresh failed: %s", exc)
-        await asyncio.sleep(REGBOT_BALANCE_CACHE_SECONDS)
+        await _sleep_until_next_tick(started, REGBOT_BALANCE_CACHE_SECONDS)
 
 
 async def _coldkeys_watch_worker() -> None:
@@ -358,11 +465,18 @@ _regbot_active_state: dict[str, Any] = {
 
 
 async def _store_regbot_active(payload: dict) -> tuple[bytes, str]:
+    # The ETag deliberately ignores `updated_at`: the scan runs every 20s and the
+    # answer is usually identical, so tagging the clock would mean re-sending the
+    # whole payload forever. Tag the scan result instead.
+    scan = {k: v for k, v in payload.items() if k != "updated_at"}
     payload["updated_at"] = time.time()
-    body, etag = _serialize_json(payload)
+    body, etag = _serialize_json(payload, etag_over=scan)
+    changed = etag != _regbot_active_state.get("etag")
     _regbot_active_state.update(
         payload=payload, updated_at=payload["updated_at"], body=body, etag=etag
     )
+    if changed:
+        _publish("regbot_active", etag)
     return body, etag
 
 
@@ -387,8 +501,114 @@ async def _regbot_active_scan_worker() -> None:
         await asyncio.sleep(REGBOT_ACTIVE_SCAN_SECONDS)
 
 
+_fee_regime_inflight: dict[str, "asyncio.Task"] = {}
+_reg_cost_inflight: dict[int, "asyncio.Task"] = {}
+
+
+async def _compute_fee_regime(include_books: bool = False) -> dict:
+    """Fetch the live fee rates and build the regime summary, populating the cache.
+
+    Single-flight via _refresh_fee_regime; never call this directly from a request.
+    """
+    from datetime import datetime, timezone
+    from fee_rate import build_fee_regime_summary, fetch_fee_rates
+
+    maker, taker = await asyncio.to_thread(fetch_fee_rates)
+    summary = build_fee_regime_summary(maker, taker)
+    if summary.get("error"):
+        raise RuntimeError(summary["error"])
+    if not include_books:
+        summary.pop("books", None)
+    summary["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Cache without the per-book payload: it is large, only wanted when the Books
+    # panel is open, and its absence is what the endpoint keys "cached" off.
+    _fee_regime_cache["payload"] = {k: v for k, v in summary.items() if k != "books"}
+    _fee_regime_cache["loaded_at"] = time.time()
+    _fee_regime_cache["expires_at"] = time.time() + FEE_REGIME_CACHE_SECONDS
+    return summary
+
+
+async def _refresh_fee_regime(include_books: bool = False) -> dict:
+    key = "books" if include_books else "summary"
+    task = _fee_regime_inflight.get(key)
+    if task is None or task.done():
+        task = asyncio.create_task(_compute_fee_regime(include_books))
+        _fee_regime_inflight[key] = task
+    return await asyncio.shield(task)
+
+
+async def _sleep_until_next_tick(started: float, interval: float) -> None:
+    """Sleep the remainder of `interval`, counting from when the tick started.
+
+    Sleeping a flat `interval` *after* the work makes the real cadence
+    interval + work, which is not what any of the "refresh faster than the TTL"
+    reasoning assumes. Measured on the metagraph worker: three netuids at ~3s each
+    plus 2s gaps turned a nominal 90s into 105s against a 120s TTL — a 15s margin
+    that a slow chain would erase, at which point every copy reads as stale. As a
+    deadline it stays 90s until the work itself exceeds that, and then it simply
+    runs continuously instead of falling further behind every cycle.
+    """
+    await asyncio.sleep(max(0.0, interval - (time.time() - started)))
+
+
+async def _fee_regime_refresh_worker() -> None:
+    """Own fee-regime freshness so a page load never waits on TAOS."""
+    while True:
+        started = time.time()
+        try:
+            await _refresh_fee_regime()
+        except Exception as exc:
+            logger.warning("Fee regime warm refresh failed: %s", exc)
+        await _sleep_until_next_tick(started, FEE_REGIME_REFRESH_SECONDS)
+
+
+async def _compute_reg_cost(netuid: int) -> dict:
+    """Registration cost for one subnet, out of process. See the note in the
+    endpoint: this is ~2s of pure-Python substrate decode and must not run in a
+    thread, where it would hold the GIL and stall every other caller."""
+    from datetime import datetime, timezone
+    from regbot import run_chain_cli
+
+    payload_cli = await run_chain_cli(["reg-cost", str(netuid)], timeout=120.0)
+    result = payload_cli.get("result") if payload_cli.get("ok") else None
+    if result is None:
+        raise RuntimeError(payload_cli.get("error") or "no result")
+    payload = {**result, "updated_at": datetime.now(timezone.utc).isoformat()}
+    _reg_cost_cache[netuid] = {
+        "payload": payload, "loaded_at": time.time(),
+        "expires_at": time.time() + REG_COST_CACHE_SECONDS,
+    }
+    return payload
+
+
+async def _refresh_reg_cost(netuid: int) -> dict:
+    task = _reg_cost_inflight.get(netuid)
+    if task is None or task.done():
+        task = asyncio.create_task(_compute_reg_cost(netuid))
+        _reg_cost_inflight[netuid] = task
+    return await asyncio.shield(task)
+
+
+async def _reg_cost_refresh_worker() -> None:
+    """Keep the subnets the UI shows warm. Staggered like the metagraph worker —
+    each is a chain connection, and firing several at once is the burst that
+    starves unrelated queries."""
+    while True:
+        started = time.time()
+        for netuid in REG_COST_WARM_NETUIDS:
+            try:
+                await _refresh_reg_cost(netuid)
+            except Exception as exc:
+                logger.warning("Reg cost warm refresh failed for netuid=%s: %s", netuid, exc)
+            await asyncio.sleep(2)
+        await _sleep_until_next_tick(started, REG_COST_REFRESH_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Synchronously, before the first request is accepted: an async warm is not
+    # enough, because a visitor landing during the fan-out just waits it out.
+    _seed_metagraph_from_disk()
     refresh_task = asyncio.create_task(_miner_status_refresh_worker())
     investing88_task = asyncio.create_task(_investing88_daily_sync_worker())
     sim_id_task = asyncio.create_task(_sim_id_watch_worker())
@@ -397,6 +617,8 @@ async def lifespan(app: FastAPI):
     coldkeys_watch_task = asyncio.create_task(_coldkeys_watch_worker())
     metagraph_task = asyncio.create_task(_metagraph_refresh_worker())
     regbot_active_task = asyncio.create_task(_regbot_active_scan_worker())
+    fee_regime_task = asyncio.create_task(_fee_regime_refresh_worker())
+    reg_cost_task = asyncio.create_task(_reg_cost_refresh_worker())
 
     async def _resume_regbot_batches() -> None:
         """A registration batch's orchestrator only lives in this process, so
@@ -433,6 +655,8 @@ async def lifespan(app: FastAPI):
     coldkeys_watch_task.cancel()
     metagraph_task.cancel()
     regbot_active_task.cancel()
+    fee_regime_task.cancel()
+    reg_cost_task.cancel()
     with suppress(asyncio.CancelledError):
         await refresh_task
         await investing88_task
@@ -442,6 +666,8 @@ async def lifespan(app: FastAPI):
         await coldkeys_watch_task
         await metagraph_task
         await regbot_active_task
+        await fee_regime_task
+        await reg_cost_task
 
 
 app = FastAPI(title="SN71 Session Manager", lifespan=lifespan)
@@ -1113,6 +1339,31 @@ def _read_miner_agent_summary(path: str) -> Optional[dict]:
 _miner_params_cache = _ByteCache(MINER_PARAMS_CACHE_SECONDS)
 
 
+def _miner_params_fingerprint() -> tuple:
+    """(name, mtime, size) for every params file, from a stat-only pass.
+
+    ~200 files: scandir with entry.stat() is about a millisecond, against ~100ms
+    to open and parse them all. The directory is also written from outside this
+    process (RegBot pulls, the auto-switcher), so an mtime on the directory alone
+    would miss an in-place edit and _save_miner_params_file's invalidation would
+    not cover it either.
+    """
+    if not os.path.isdir(MINER_PARAMS_DIR):
+        return ()
+    out = []
+    with os.scandir(MINER_PARAMS_DIR) as entries:
+        for e in entries:
+            if not (e.name.startswith("run_miner_") and e.name.endswith(".json")):
+                continue
+            try:
+                st = e.stat()
+            except OSError:
+                continue
+            out.append((e.name, st.st_mtime, st.st_size))
+    out.sort()
+    return tuple(out)
+
+
 def _scan_miner_params() -> dict:
     uids = []
     agents = {}
@@ -1140,11 +1391,12 @@ async def list_miner_params(request: Request):
     this on every load. So the scan runs in a thread and the result is served from
     a byte cache that _save_miner_params_file() invalidates on every write.
     """
-    hit = _miner_params_cache.get()
+    fingerprint = await run_in_threadpool(_miner_params_fingerprint)
+    hit = _miner_params_cache.get(fingerprint)
     if hit:
         return _json_bytes_response(request, hit[0], hit[1])
     payload = await run_in_threadpool(_scan_miner_params)
-    body, etag = _miner_params_cache.put(None, payload)
+    body, etag = _miner_params_cache.put(fingerprint, payload)
     return _json_bytes_response(request, body, etag, "miss")
 
 
@@ -1579,15 +1831,75 @@ async def _load_metagraph(netuid: int) -> dict:
     # Stamped into the payload rather than sent as a header so the client can tell
     # how old a snapshot is without needing to read response metadata.
     data["fetched_at"] = time.time()
-    body, etag = _serialize_json(data)
+    # The ETag ignores `fetched_at` for the same reason regbot/active's does: a
+    # refresh that finds nothing new must not force a re-send. Between blocks the
+    # identity half in particular is usually unchanged.
+    body, etag = _serialize_json(data, etag_over={k: v for k, v in data.items() if k != "fetched_at"})
+    previous = _metagraph_cache.get(netuid) or {}
     _metagraph_cache[netuid] = {
         "data": data, "body": body, "etag": etag, "timestamp": time.time(),
     }
+    _save_metagraph_snapshot(netuid, data)
+    if etag != previous.get("etag"):
+        _publish("metagraph:%d" % netuid, etag)
     logger.info(
         "Metagraph netuid=%s loaded (%s neurons, %.0fKB)",
         netuid, data.get("totalNeurons", 0), len(body) / 1024,
     )
     return data
+
+
+def _metagraph_snapshot_path(netuid: int) -> str:
+    return os.path.join(DASHBOARD_ROOT, "miner_status", f"metagraph_{netuid}.json")
+
+
+def _save_metagraph_snapshot(netuid: int, data: dict) -> None:
+    """Persist the last good metagraph so a restart doesn't depend on the chain.
+
+    Written after every successful load, atomically. Observed 2026-08-12: the
+    finney entrypoint stopped accepting websocket connections entirely, and
+    because the cache was in-process only, a `pm2 restart` during that window
+    left the dashboard with nothing to render at all — every panel 502.
+    """
+    path = _metagraph_snapshot_path(netuid)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except OSError as exc:
+        logger.warning("Could not persist metagraph snapshot for netuid=%s: %s", netuid, exc)
+
+
+# How old a persisted snapshot may be and still be worth showing at startup. Well
+# past this and it is misleading rather than useful; the payload carries
+# `fetched_at` either way so the age is never hidden.
+METAGRAPH_SNAPSHOT_MAX_AGE = float(os.getenv("METAGRAPH_SNAPSHOT_MAX_AGE", str(24 * 3600)))
+
+
+def _seed_metagraph_from_disk() -> None:
+    """Fill the cache from the last persisted snapshots, synchronously, before the
+    first request. Entries are seeded with their *original* timestamp, so they
+    read as stale immediately and the first request kicks a refresh behind itself
+    rather than being served as fresh."""
+    for netuid in METAGRAPH_WARM_NETUIDS:
+        path = _metagraph_snapshot_path(netuid)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        fetched_at = data.get("fetched_at") or 0
+        age = time.time() - fetched_at
+        if age > METAGRAPH_SNAPSHOT_MAX_AGE:
+            logger.info("Skipping metagraph snapshot for netuid=%s (%.1fh old)", netuid, age / 3600)
+            continue
+        body, etag = _serialize_json(data, etag_over={k: v for k, v in data.items() if k != "fetched_at"})
+        _metagraph_cache[netuid] = {
+            "data": data, "body": body, "etag": etag, "timestamp": fetched_at,
+        }
+        logger.info("Seeded metagraph netuid=%s from disk (%.0fs old)", netuid, age)
 
 
 async def _refresh_metagraph(netuid: int) -> dict:
@@ -1614,13 +1926,14 @@ async def _metagraph_refresh_worker() -> None:
     kind of burst that made the balance sweep starve unrelated queries.
     """
     while True:
+        started = time.time()
         for netuid in METAGRAPH_WARM_NETUIDS:
             try:
                 await _refresh_metagraph(netuid)
             except Exception as exc:
                 logger.warning("Metagraph warm refresh failed for netuid=%s: %s", netuid, exc)
             await asyncio.sleep(2)
-        await asyncio.sleep(METAGRAPH_REFRESH_SECONDS)
+        await _sleep_until_next_tick(started, METAGRAPH_REFRESH_SECONDS)
 
 
 @app.get("/api/metagraph-data")
@@ -1628,6 +1941,10 @@ async def get_metagraph_data(request: Request):
     netuid = _parse_netuid(request.query_params.get("netuid"), 71)
     refresh = request.query_params.get("refresh", "").lower() in ("1", "true", "yes")
     entry = _metagraph_cache.get(netuid)
+
+    if entry and refresh and (time.time() - entry["timestamp"]) < CHAIN_BLOCK_SECONDS:
+        # Same block, so a re-read is 2.9s to produce identical bytes.
+        return _json_bytes_response(request, entry["body"], entry["etag"], "hit-coalesced")
 
     if entry and not refresh:
         if (time.time() - entry["timestamp"]) < METAGRAPH_CACHE_TTL:
@@ -1690,6 +2007,142 @@ async def get_subnet_emission(request: Request):
     return _json_bytes_response(request, body, etag)
 
 
+@app.get("/api/events")
+async def sse_events(request: Request):
+    """Change notifications. One line per changed topic; the client re-fetches.
+
+    `Content-Encoding: identity` is load-bearing — Starlette's GZipMiddleware
+    passes a response straight through when that header is already set, and
+    without it the stream would sit in a gzip buffer waiting for enough bytes to
+    be worth compressing, which for ~60-byte events is forever.
+    """
+    queue: asyncio.Queue = asyncio.Queue(maxsize=SSE_QUEUE_MAX)
+    _sse_subscribers.add(queue)
+
+    async def stream():
+        try:
+            # Tell a reconnecting client what it may have missed while away, so it
+            # can revalidate immediately instead of waiting for the next change.
+            yield b"retry: 3000\n\n"
+            for topic, etag in list(_sse_topic_etags.items()):
+                yield b"event: change\ndata: %s\n\n" % _dumps({"topic": topic, "etag": etag})
+            while True:
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=SSE_HEARTBEAT_SECONDS)
+                except asyncio.TimeoutError:
+                    # A comment frame. Keeps the connection off any idle reaper and
+                    # gives the client something to notice a dead link by.
+                    yield b": ping\n\n"
+                    continue
+                yield b"event: change\ndata: %s\n\n" % _dumps(message)
+        finally:
+            _sse_subscribers.discard(queue)
+
+    from fastapi.responses import StreamingResponse
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "Connection": "keep-alive",
+            "Content-Encoding": "identity",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---- Metagraph, split by how often each half actually changes ---------------
+#
+# Identity (hotkey <-> uid <-> coldkey, validator flags, axon IPs) only changes
+# when something registers or deregisters — minutes to hours apart. State
+# (emission, incentive, age, immunity) changes every block. Shipping them
+# together meant a 28KB gzipped response every poll to carry ~5KB of movement.
+#
+# Split, identity answers 304 almost always and state is sent columnar: the
+# hotkey strings are the bulk of this payload, and the combined shape wrote each
+# 48-character hotkey seven times over, once as a key in each parallel map.
+_METAGRAPH_IDENTITY_KEYS = (
+    "hotkeyToUid", "uidToHotkey", "hotkeyToColdkey", "coldkeyToHotkeys",
+    "isValidator", "uidToIp", "netuid", "immunityPeriod", "totalNeurons", "error",
+)
+
+
+def _metagraph_identity_payload(data: dict) -> dict:
+    payload = {k: data.get(k) for k in _METAGRAPH_IDENTITY_KEYS if k in data}
+    # `order` is the contract between the two halves: state arrays are positional
+    # against it. Taken from hotkeyToUid so both halves always agree.
+    payload["order"] = list(data.get("hotkeyToUid") or {})
+    return payload
+
+
+def _metagraph_state_payload(data: dict, identity_etag: str) -> dict:
+    order = list(data.get("hotkeyToUid") or {})
+    cols = {}
+    for name, source in (
+        ("emissions", data.get("emissions") or {}),
+        ("incentives", data.get("incentives") or {}),
+        ("minerAge", data.get("minerAge") or {}),
+    ):
+        cols[name] = [source.get(h) for h in order]
+    immune = data.get("isImmune") or {}
+    cols["isImmune"] = [1 if immune.get(h) else 0 for h in order]
+    return {
+        # State arrays are positional against identity's `order`, so a client
+        # holding a *stale* identity would map values onto the wrong hotkeys. It
+        # can't detect that from lengths alone — one deregistration plus one
+        # registration in the same block keeps the count identical. So state
+        # carries the identity ETag it was built against and the client refetches
+        # identity unconditionally when it doesn't match what it holds.
+        "identity_etag": identity_etag,
+        "order_len": len(order),
+        "cols": cols,
+        "currentBlock": data.get("currentBlock"),
+        "alphaPriceTao": data.get("alphaPriceTao"),
+        "netuid": data.get("netuid"),
+        "fetched_at": data.get("fetched_at"),
+    }
+
+
+def _metagraph_halves(entry: dict) -> dict:
+    """Build and memoise both halves together, so state always names the identity
+    it was derived from. One reshape per refresh, not one per request."""
+    if "halves" not in entry:
+        data = entry["data"]
+        identity = _serialize_json(_metagraph_identity_payload(data))
+        state = _serialize_json(_metagraph_state_payload(data, identity[1]))
+        entry["halves"] = {"identity": identity, "state": state}
+    return entry["halves"]
+
+
+async def _metagraph_half(request: Request, kind: str) -> Response:
+    netuid = _parse_netuid(request.query_params.get("netuid"), 79)
+    entry = _metagraph_cache.get(netuid)
+    if not entry:
+        try:
+            await _refresh_metagraph(netuid)
+        except Exception as e:
+            logger.error("Metagraph %s load failed for netuid=%s: %s", kind, netuid, e)
+            raise HTTPException(status_code=502, detail=str(e))
+        entry = _metagraph_cache[netuid]
+    elif (time.time() - entry["timestamp"]) >= METAGRAPH_CACHE_TTL:
+        asyncio.create_task(_swallow(_refresh_metagraph(netuid)))
+    body, etag = _metagraph_halves(entry)[kind]
+    return _json_bytes_response(request, body, etag)
+
+
+@app.get("/api/metagraph-identity")
+async def get_metagraph_identity(request: Request):
+    """Hotkey/uid/coldkey maps. Changes only on registration churn — expect 304s."""
+    return await _metagraph_half(request, "identity")
+
+
+@app.get("/api/metagraph-state")
+async def get_metagraph_state(request: Request):
+    """Per-block values as arrays positional against the identity's `order`."""
+    return await _metagraph_half(request, "state")
+
+
 UID_STATUS_CACHE_TTL = 60
 _uid_status_cache: dict = {}  # (uid, include_books) -> {"data": ..., "timestamp": ...}
 
@@ -1735,6 +2188,57 @@ async def get_uid_status(uid: int, request: Request):
 
 _uid_metrics_cache = _ByteCache(UID_METRICS_CACHE_SECONDS)
 
+# Fields the client never reads. Verified against asset/miners.js before removing
+# each one; re-check with `grep -c '\bfield\b' asset/miners.js` before adding to
+# this list. A denylist rather than an allowlist so a genuinely new metric reaches
+# the UI without a server change.
+UID_METRICS_DROP_FIELDS = frozenset(
+    f.strip() for f in os.getenv(
+        "UID_METRICS_DROP_FIELDS",
+        # unused outright:            derivable client-side from reg_block:
+        "reg_cost_rao,reg_cost_tao,reg_block,max_book_volume,blocks_since_registration",
+    ).split(",") if f.strip()
+)
+# The only three metrics rendered with a delta arrow (renderPnlMetricCell for the
+# first two, an explicit call for the third). `prev_metrics` was a byte-for-byte
+# duplicate of `metrics` — half the payload — to serve exactly these.
+UID_METRICS_DELTA_FIELDS = ("real_pnl", "unrl_pnl", "volume")
+
+
+def _slim_uid_metrics(payload: dict) -> dict:
+    """Replace prev_metrics with per-UID deltas, drop unread fields, go columnar.
+
+    Measured on the live fleet: 281,835 raw / 58,556 gzipped -> 59,465 / 25,339.
+    The client rehydrates `cols` back into the per-UID object shape on arrival, so
+    nothing downstream of loadUidMetrics() changes.
+    """
+    metrics = payload.get("metrics") or {}
+    prev = payload.get("prev_metrics") or {}
+    out = {k: v for k, v in payload.items() if k not in ("metrics", "prev_metrics")}
+
+    uids = sorted(metrics, key=lambda u: int(u) if str(u).lstrip("-").isdigit() else 0)
+    fields = sorted({f for row in metrics.values() for f in row} - UID_METRICS_DROP_FIELDS)
+    # reg_date/_iso/_tz are three renderings of the instant reg_date_utc_iso already
+    # carries; the client only falls back to them when the ISO field is missing on
+    # an older daily-status file, so keep them exactly then and drop them otherwise.
+    if all((metrics[u].get("reg_date_utc_iso") for u in uids)):
+        fields = [f for f in fields if f not in ("reg_date", "reg_date_iso", "reg_date_tz")]
+
+    out["uids"] = [int(u) if str(u).lstrip("-").isdigit() else u for u in uids]
+    out["fields"] = fields
+    out["cols"] = {f: [metrics[u].get(f) for u in uids] for f in fields}
+    out["deltas"] = {
+        f: [
+            (metrics[u][f] - prev[u][f])
+            if (isinstance(metrics.get(u, {}).get(f), (int, float))
+                and isinstance(prev.get(u, {}).get(f), (int, float)))
+            else None
+            for u in uids
+        ]
+        for f in UID_METRICS_DELTA_FIELDS
+    }
+    return out
+
 
 @app.get("/api/uid-metrics")
 async def get_uid_metrics(request: Request):
@@ -1744,6 +2248,12 @@ async def get_uid_metrics(request: Request):
 
     refresh = request.query_params.get("refresh", "").lower() in ("1", "true", "yes")
     uids_param = request.query_params.get("uids", "").strip()
+    # `shape=full` returns the original per-UID objects plus prev_metrics, for
+    # anything reading this endpoint outside the dashboard. The UI uses the
+    # default slim shape.
+    shape = request.query_params.get("shape", "slim").strip().lower()
+    if shape not in ("slim", "full"):
+        raise HTTPException(status_code=400, detail="Invalid shape parameter")
     uids: Optional[list[int]] = None
     if uids_param:
         try:
@@ -1751,16 +2261,41 @@ async def get_uid_metrics(request: Request):
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid uids parameter")
 
+    def _shape(payload: dict) -> dict:
+        return payload if shape == "full" else _slim_uid_metrics(payload)
+
+    def _source_mtimes() -> tuple:
+        """Exact change signal for this payload: it is derived entirely from two
+        files, both rewritten by the 900s refresh worker. Two stat() calls decide
+        whether the cached bytes are still correct."""
+        from miner_status_cache import daily_status_path, prev_epoch_path
+
+        out = []
+        for path in (daily_status_path(), prev_epoch_path()):
+            try:
+                out.append(os.path.getmtime(path))
+            except OSError:
+                out.append(None)
+        return tuple(out)
+
     if not refresh:
         # ~275KB for the full fleet. get_cached_metrics_payload() already avoids the
         # chain, but re-serialising that dict is 44ms of event-loop stall on every
         # poll for data the 900s refresh worker only changes four times an hour.
-        hit = _uid_metrics_cache.get(uids_param)
+        cache_key = (uids_param, shape, _source_mtimes())
+        hit = _uid_metrics_cache.get(cache_key)
         if hit:
             return _json_bytes_response(request, hit[0], hit[1])
         cached = await run_in_threadpool(get_cached_metrics_payload, uids)
         if cached:
-            body, etag = _uid_metrics_cache.put(uids_param, cached)
+            body, etag = _uid_metrics_cache.put(cache_key, _shape(cached))
+            # Deliberately no _publish() here. A byte-cache miss means our copy
+            # expired, not that the data changed — and announcing it from inside
+            # the GET races the very fetch that caused it: the notification can
+            # arrive before that fetch has stored its ETag, so the client cannot
+            # tell it already has this and re-downloads the whole payload.
+            # _miner_status_refresh_worker owns this topic; it knows when the
+            # underlying file actually changed.
             return _json_bytes_response(request, body, etag, "miss")
     else:
         _uid_metrics_cache.invalidate()
@@ -1786,7 +2321,7 @@ async def get_uid_metrics(request: Request):
         }
         if cached and cached.get("current_block") is not None:
             payload["current_block"] = cached["current_block"]
-        return payload
+        return _shape(payload)
     except ImportError as e:
         logger.error("UID metrics module import failed: %s", e)
         raise HTTPException(status_code=500, detail=f"UID status module unavailable: {e}")
@@ -1846,21 +2381,29 @@ async def get_agent_history(uid: int, request: Request):
 
 @app.get("/api/fee-regime")
 async def get_fee_regime(request: Request):
-    import asyncio
-    import time
-    from datetime import datetime, timezone
-    from fee_rate import build_fee_regime_summary, fetch_fee_rates
-
+    # The upstream fetch and summary build live in _compute_fee_regime, so the
+    # worker and this handler cannot drift apart.
     refresh = request.query_params.get("refresh", "").lower() in ("1", "true", "yes")
     include_books = request.query_params.get("books", "").lower() in ("1", "true", "yes")
     now = time.time()
     if (
-        not refresh
+        refresh
         and not include_books
         and _fee_regime_cache["payload"] is not None
-        and now < _fee_regime_cache["expires_at"]
+        and (now - _fee_regime_cache.get("loaded_at", 0)) < CHAIN_BLOCK_SECONDS
     ):
-        return _fee_regime_cache["payload"]
+        body, etag = _serialize_json(_fee_regime_cache["payload"])
+        return _json_bytes_response(request, body, etag, "hit-coalesced")
+
+    if not refresh and not include_books and _fee_regime_cache["payload"] is not None:
+        fresh = now < _fee_regime_cache["expires_at"]
+        if not fresh:
+            # Same rule as everywhere else here: stale-but-real beats a 2.2s wait
+            # on TAOS. _fee_regime_refresh_worker owns freshness; this is the
+            # backstop for a tick that failed.
+            asyncio.create_task(_swallow(_refresh_fee_regime()))
+        body, etag = _serialize_json(_fee_regime_cache["payload"])
+        return _json_bytes_response(request, body, etag, "hit" if fresh else "stale")
 
     def _cached_fallback(reason: str):
         """Serve the last-good regime summary during a transient upstream miss
@@ -1874,22 +2417,9 @@ async def get_fee_regime(request: Request):
         return None
 
     try:
-        maker, taker = await asyncio.to_thread(fetch_fee_rates)
-        summary = build_fee_regime_summary(maker, taker)
-        if summary.get("error"):
-            fallback = _cached_fallback(summary["error"])
-            if fallback is not None:
-                return fallback
-            raise HTTPException(status_code=502, detail=summary["error"])
-        if not include_books:
-            summary.pop("books", None)
-        summary["updated_at"] = datetime.now(timezone.utc).isoformat()
-        # Cache the regime summary (without per-book payload) both for reuse and
-        # as a fallback during transient upstream misses. Populate on the books
-        # path too so a fallback exists even if the first request asked for books.
-        _fee_regime_cache["payload"] = {k: v for k, v in summary.items() if k != "books"}
-        _fee_regime_cache["expires_at"] = now + FEE_REGIME_CACHE_SECONDS
-        return summary
+        summary = await _refresh_fee_regime(include_books)
+        body, etag = _serialize_json(summary)
+        return _json_bytes_response(request, body, etag, "miss")
     except HTTPException:
         raise
     except ImportError as e:
@@ -1990,27 +2520,39 @@ async def get_reg_cost(request: Request):
     refresh = request.query_params.get("refresh", "").lower() in ("1", "true", "yes")
     now = time.time()
     cached = _reg_cost_cache.get(netuid)
-    if not refresh and cached and now < cached.get("expires_at", 0):
-        return cached["payload"]
+
+    if cached and refresh and (now - cached.get("loaded_at", 0)) < CHAIN_BLOCK_SECONDS:
+        body, etag = _serialize_json(cached["payload"])
+        return _json_bytes_response(request, body, etag, "hit-coalesced")
+
+    if cached and not refresh:
+        fresh = now < cached.get("expires_at", 0)
+        if not fresh:
+            # Expired is not a reason to make this caller wait ~2s on the chain.
+            # _reg_cost_refresh_worker normally gets here first; this covers a
+            # netuid it doesn't warm, or a tick that failed.
+            asyncio.create_task(_swallow(_refresh_reg_cost(netuid)))
+        body, etag = _serialize_json(cached["payload"])
+        return _json_bytes_response(request, body, etag, "hit" if fresh else "stale")
 
     try:
-        # Out of process, not in a thread: this query takes ~5s of pure-Python substrate
+        # Out of process, not in a thread: this query is ~2s of pure-Python substrate
         # decoding, and run in-process it holds the GIL for that whole time — measured, it
         # took the event loop's response latency from ~1ms to 6-400ms for the duration, so
         # every other caller (an agent Confirm, a poll) waited on it. See regbot.chain_cli.
-        payload_cli = await run_chain_cli(["reg-cost", str(netuid)], timeout=120.0)
-        result = payload_cli.get("result") if payload_cli.get("ok") else None
-        if result is None:
+        try:
+            payload = await _refresh_reg_cost(netuid)
+        except Exception as exc:
+            if cached:
+                # A forced refresh that failed still has a last good answer.
+                body, etag = _serialize_json(cached["payload"])
+                return _json_bytes_response(request, body, etag, "stale-error")
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to fetch reg cost for subnet {netuid}: {payload_cli.get('error') or 'no result'}",
+                detail=f"Failed to fetch reg cost for subnet {netuid}: {exc}",
             )
-        payload = {
-            **result,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        _reg_cost_cache[netuid] = {"payload": payload, "expires_at": now + REG_COST_CACHE_SECONDS}
-        return payload
+        body, etag = _serialize_json(payload)
+        return _json_bytes_response(request, body, etag, "miss")
     except HTTPException:
         raise
     except ImportError as e:
@@ -2022,7 +2564,7 @@ async def get_reg_cost(request: Request):
 
 
 @app.get("/api/sim-id")
-async def get_sim_id_endpoint():
+async def get_sim_id_endpoint(request: Request):
     """Currently-live TAOS simulation epoch for subnet 79 (get_sim_id has its
     own 5-min cache, so this is cheap to poll on every dashboard refresh)."""
     import asyncio
@@ -2030,7 +2572,8 @@ async def get_sim_id_endpoint():
 
     try:
         sim_id = await asyncio.to_thread(get_sim_id)
-        return {"sim_id": sim_id}
+        body, etag = _serialize_json({"sim_id": sim_id})
+        return _json_bytes_response(request, body, etag)
     except Exception as e:
         logger.error("Sim id fetch failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
@@ -2164,7 +2707,7 @@ async def get_alpha_price(request: Request):
     latest_candle = rows[-1][0]
     age_hours = _alpha_candle_age_hours(latest_candle)
 
-    return {
+    payload = {
         "netuid": netuid,
         "name": entry.get("name"),
         "range": range_key,
@@ -2194,6 +2737,11 @@ async def get_alpha_price(request: Request):
         "stale_after_hours": ALPHA_PRICE_STALE_AFTER_HOURS,
         "updated_at": datetime.fromtimestamp(entry["mtime"], timezone.utc).isoformat(),
     }
+    # `updated_at` is the source file's mtime, which the collector bumps on a
+    # timer whether or not the prices moved — so the ETag is taken over the
+    # series instead, and an unchanged range answers 304.
+    body, etag = _serialize_json(payload, etag_over={k: v for k, v in payload.items() if k != "updated_at"})
+    return _json_bytes_response(request, body, etag)
 
 
 @app.get("/api/investing88/miner/{uid}")
@@ -2493,18 +3041,44 @@ async def regbot_balance(server: str, refresh: bool = False):
 
 
 @app.post("/api/regbot/balance/refresh")
-async def regbot_balance_refresh():
-    """Force-refresh every server's balance/stake cache immediately, instead
-    of waiting for the next REGBOT_BALANCE_CACHE_SECONDS background cycle —
-    used on page load/refresh so the Add Miner / Unstake / Multi-Server
-    Register modals always show current numbers."""
-    from regbot import refresh_balance_cache
+async def regbot_balance_refresh(request: Request):
+    """Make sure the balance/stake cache is current, for the Add Miner / Unstake /
+    Multi-Server Register modals.
 
-    try:
-        return await refresh_balance_cache()
-    except Exception as e:
-        logger.error("RegBot balance refresh failed: %s", e)
-        raise HTTPException(status_code=502, detail=str(e))
+    This used to run the sweep synchronously on every call — 12 coldkeys over one
+    chain connection, measured at 4.5s and as much as 15s — while
+    `_regbot_balance_refresh_worker` was already keeping the same file warm every
+    REGBOT_BALANCE_CACHE_SECONDS. The caller (`loadRegBotBalances`) is
+    fire-and-forget and never reads the body, so blocking bought nothing at all.
+
+    Now it follows the rule the rest of this service follows: the worker owns
+    freshness, the request does a lookup, and a sweep only runs behind the
+    response when the file has actually gone stale. `?wait=1` restores the old
+    blocking behaviour for a caller that genuinely needs the new numbers before it
+    can continue.
+    """
+    from regbot import load_balance_cache
+
+    wait = request.query_params.get("wait", "").lower() in ("1", "true", "yes")
+    age = _balance_cache_age()
+    cached = load_balance_cache()
+
+    if wait or cached is None:
+        # Nothing to serve, or the caller asked to block.
+        try:
+            return await _refresh_regbot_balances()
+        except Exception as e:
+            logger.error("RegBot balance refresh failed: %s", e)
+            if cached is not None:
+                return {**cached, "stale": True}
+            raise HTTPException(status_code=502, detail=str(e))
+
+    if age >= REGBOT_BALANCE_CACHE_SECONDS:
+        # Stale: hand back what we have and let the sweep run behind the response.
+        asyncio.create_task(_swallow(_refresh_regbot_balances()))
+        return {**cached, "cache": "stale"}
+
+    return {**cached, "cache": "hit"}
 
 
 @app.get("/api/regbot/history")
@@ -2574,6 +3148,9 @@ async def regbot_batch_start(payload: BatchStartRequest):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+_batch_active_etag = {"value": None}
+
+
 @app.get("/api/regbot/batch/active")
 async def regbot_batch_active(request: Request):
     """`batches` is the full set (several can run at once); `batch` is the most
@@ -2588,6 +3165,9 @@ async def regbot_batch_active(request: Request):
     body, etag = _serialize_json(
         {"batches": get_active_batches(), "batch": get_active_batch()}
     )
+    if etag != _batch_active_etag["value"]:
+        _batch_active_etag["value"] = etag
+        _publish("batch_active", etag)
     return _json_bytes_response(request, body, etag)
 
 
@@ -2670,11 +3250,17 @@ async def unstake_log(run_id: str):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+_unstake_active_etag = {"value": None}
+
+
 @app.get("/api/unstake/active")
 async def unstake_active(request: Request):
     from unstake import get_active_unstake_runs_view
 
     body, etag = _serialize_json({"active": get_active_unstake_runs_view()})
+    if etag != _unstake_active_etag["value"]:
+        _unstake_active_etag["value"] = etag
+        _publish("unstake_active", etag)
     return _json_bytes_response(request, body, etag)
 
 
@@ -2720,10 +3306,10 @@ async def unstake_history(limit: int = 50):
 
 
 @app.get("/api/coldkeys/summary")
-async def coldkeys_summary():
+async def coldkeys_summary(request: Request):
     from coldkeys_watch import get_latest_summary
 
-    return get_latest_summary() or {
+    payload = get_latest_summary() or {
         "run_at": None,
         "is_first_run": True,
         "new_coldkeys": [],
@@ -2733,6 +3319,8 @@ async def coldkeys_summary():
         "total_ips": 0,
         "total_miners": 0,
     }
+    body, etag = _serialize_json(payload)
+    return _json_bytes_response(request, body, etag)
 
 
 @app.get("/api/coldkeys/list")

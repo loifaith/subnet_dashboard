@@ -44,9 +44,9 @@ all ~250 coldkeys as new would be noise, not signal.
 
 | Path | Source |
 |---|---|
-| `GET /api/coldkeys/summary` | [app.py:2690](../../../app.py#L2690) — the diff; returns an empty shape rather than 404 when nothing has run |
-| `GET /api/coldkeys/list` | [app.py:2706](../../../app.py#L2706) — full current collection; 404 before the first run |
-| `POST /api/coldkeys/refresh` | [app.py:2716](../../../app.py#L2716) — run it now |
+| `GET /api/coldkeys/summary` | [app.py:3308](../../../app.py#L3308) — the diff; returns an empty shape rather than 404 when nothing has run |
+| `GET /api/coldkeys/list` | [app.py:3326](../../../app.py#L3326) — full current collection; 404 before the first run |
+| `POST /api/coldkeys/refresh` | [app.py:3336](../../../app.py#L3336) — run it now |
 
 The background worker `_coldkeys_watch_worker()` runs it every
 `COLDKEYS_WATCH_INTERVAL_SECONDS` (3600).

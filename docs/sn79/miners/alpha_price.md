@@ -3,7 +3,7 @@
 The header price widget: subnet alpha price over a selectable window
 (24H / 7D / 30D / 90D / ALL), with change %, high and low.
 
-`GET /api/alpha-price?netuid=79&range=7d` — [app.py:2106](../../../app.py#L2106)
+`GET /api/alpha-price?netuid=79&range=7d` — [app.py:2649](../../../app.py#L2649)
 
 ## Source
 
@@ -21,7 +21,7 @@ clean 404, not a crash.
 
 ### 1. mtime-keyed parse cache
 
-`_load_alpha_series()` ([app.py:2039](../../../app.py#L2039)) caches parsed rows
+`_load_alpha_series()` ([app.py:2582](../../../app.py#L2582)) caches parsed rows
 keyed on the file's **mtime**. The source is rewritten hourly, so mtime is an exact
 change signal — and re-parsing ~9k rows of JSON on every poll of an always-visible
 header widget is not worth it. Open and volume are dropped at parse time; nothing
@@ -40,7 +40,7 @@ timestamps are zero-padded `%Y-%m-%d %H:%M`.
 
 ### 3. Downsample by last-of-bucket
 
-`_downsample_last()` ([app.py:2075](../../../app.py#L2075)) thins to
+`_downsample_last()` ([app.py:2618](../../../app.py#L2618)) thins to
 `ALPHA_PRICE_MAX_POINTS` (240) by keeping the **last** row of each bucket, and
 forces the final point to be the true latest.
 
@@ -79,7 +79,7 @@ frozen at the same timestamp. The header showed a day-old close as the live pric
 3.6% off the actual chain price by then.
 
 So freshness is computed from `latest_candle` (the newest row in the **whole
-series**, not the selected window) via [`_alpha_candle_age_hours()`](../../../app.py#L2092), and `stale` is
+series**, not the selected window) via [`_alpha_candle_age_hours()`](../../../app.py#L2587), and `stale` is
 `age_hours > ALPHA_PRICE_STALE_AFTER_HOURS` (env, default 2 — the series is hourly,
 so a multi-hour gap means stopped, not lagging).
 

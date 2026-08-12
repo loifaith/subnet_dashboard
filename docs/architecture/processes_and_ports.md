@@ -53,7 +53,7 @@ See [../sn79/tricks/process_detachment.md](../sn79/tricks/process_detachment.md)
 `app.py` reads plain `os.getenv` with in-code defaults, so **the defaults below are
 what actually runs** unless PM2 injects otherwise.
 
-### Timing / worker cadence ([app.py:36-71](../../app.py#L36-L71))
+### Timing / worker cadence ([app.py:36-101](../../app.py#L36-L101))
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -70,10 +70,16 @@ what actually runs** unless PM2 injects otherwise.
 | `METAGRAPH_REFRESH_SECONDS` | 90 | metagraph warm-refresh worker — **must stay < `METAGRAPH_CACHE_TTL` (120)** |
 | `METAGRAPH_WARM_NETUIDS` | `79,71,88` | which metagraphs that worker keeps warm |
 | `REGBOT_ACTIVE_SCAN_SECONDS` | 20 | RegBot active-run SSH scan cadence |
-| `MINER_PARAMS_CACHE_SECONDS` | 30 | `/api/miner-params` byte cache (also invalidated on write) |
-| `UID_METRICS_CACHE_SECONDS` | 30 | `/api/uid-metrics` byte cache |
+| `MINER_PARAMS_CACHE_SECONDS` | 3600 | `/api/miner-params` byte-cache backstop (keyed on a directory fingerprint) |
+| `UID_METRICS_CACHE_SECONDS` | 3600 | `/api/uid-metrics` byte-cache backstop (keyed on file mtimes) |
+| `FEE_REGIME_REFRESH_SECONDS` | 240 | fee-regime warm refresh; **must stay under `FEE_REGIME_CACHE_SECONDS` (300)** |
+| `REG_COST_REFRESH_SECONDS` | 240 | reg-cost warm refresh; **must stay under `REG_COST_CACHE_SECONDS` (300)** |
+| `REG_COST_WARM_NETUIDS` | `79,88` | which subnets the reg-cost worker keeps warm |
 | `FEE_HISTORY_CACHE_SECONDS` | 60 | `/api/fee-regime/history` byte cache |
 | `FEE_HISTORY_MAX_POINTS` | 600 | per-series cap before downsampling |
+| `SSE_HEARTBEAT_SECONDS` | 20 | `/api/events` keepalive comment frame |
+| `METAGRAPH_SNAPSHOT_MAX_AGE` | 86400 | oldest on-disk metagraph snapshot still worth seeding at startup |
+| `UID_METRICS_DROP_FIELDS` | see app.py | per-UID fields not sent to the client |
 
 ### Paths
 

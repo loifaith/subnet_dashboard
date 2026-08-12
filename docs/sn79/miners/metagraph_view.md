@@ -17,13 +17,40 @@ emission, coldkey, immunity and age.
   process** (5s to spawn, 90s to finish), single-flight per netuid. Never in-process —
   see [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
 - `?refresh=1` forces a fresh load. If it fails and a cached copy exists, the cached
-  copy is returned (`X-Cache: stale-error`) rather than an error.
+  copy is returned (`X-Cache: stale-error`) rather than an error. A forced read
+  landing within `CHAIN_BLOCK_SECONDS` (12s) of the last successful one is answered
+  from cache (`X-Cache: hit-coalesced`): inside a block there is no new state to
+  read, so the 2.9s subprocess would only reproduce the same numbers.
 - `fetched_at` (unix seconds) is stamped into the payload so a client can tell how
   old a snapshot is. `X-Cache` says the same thing to curl.
 - Responses carry a weak `ETag`; an unchanged re-poll is a `304`.
 
 For just the header emission figure, use `GET /api/subnet-emission?netuid=<n>` —
 same warm cache, ~100 bytes instead of ~150KB.
+
+## The page does not use this endpoint
+
+It fetches **two halves** instead, because they change on completely different
+clocks:
+
+| Endpoint | Contains | Changes | gzip |
+|---|---|---|---|
+| `/api/metagraph-identity` | hotkey ↔ uid ↔ coldkey, validator flags, IPs, `order` | on registration churn | 20 KB |
+| `/api/metagraph-state` | emission, incentive, age, immunity, current block | every block | **5 KB** |
+| `/api/metagraph-data` | both, as one object | every block | 28 KB |
+
+State is columnar — arrays positional against identity's `order` — and the client
+merges the two back into exactly the shape `processMetagraph()` has always read, so
+nothing downstream knows about the split.
+
+**If you touch this, read the hazard first.** A client holding a stale identity
+would map every state value onto the wrong hotkey, and a length check does not catch
+it: one deregistration plus one registration in the same block keeps the count
+identical. State therefore carries `identity_etag`, and the client refetches
+identity unconditionally on a mismatch. Details in
+[../performance/wire_protocol.md](../performance/wire_protocol.md).
+
+`/api/metagraph-data` is kept for anything outside the dashboard.
 
 Response is a bundle of hotkey-keyed maps, shaped to match the old subnet71 API:
 
@@ -43,7 +70,7 @@ is_immune  = age_blocks < immunity_period
 ```
 
 `immunity_period` comes from `subtensor.immunity_period(netuid)`, defaulting to
-10000 blocks if that call fails ([app.py:613-618](../../../app.py#L613-L618)).
+10000 blocks if that call fails ([app.py:848](../../../app.py#L848)).
 
 Note this uses `last_update`, not the registration block. The *registration*-based
 view (reg date, reg cost, blocks since registration) comes from a different source —
@@ -85,3 +112,25 @@ the current filtered table.
 then `loadData(true)`. Netuid 79 enables the fee panel, sim id, agent info and UID
 metrics; 88 swaps in the Investing88 columns; anything else shows the bare
 metagraph. See [`loadData()`](../../../asset/miners.js).
+
+## What `loadData(true)` does — and does not — wait for
+
+The `true` is `forceRefresh`, and it reaches three endpoints as `?refresh=1`:
+`/api/metagraph-data`, `/api/fee-regime`, `/api/reg-cost`. Each is a 2-3s upstream
+call.
+
+**None of them gate the paint.** The table renders from the warm metagraph halves
+first — ~89ms from click — and the forced chain re-read runs behind it via
+`forceMetagraphReread()`, repainting when it lands. The Refresh button's icon spins
+until then; the page is interactive throughout. A re-read arriving within one block
+of the last one is answered from cache (`X-Cache: hit-coalesced`) rather than
+repeating a query that cannot produce different numbers.
+
+Two rules this encodes, both learned from outages:
+
+- a forced re-read is *newer data*, never *the only data* — the warm copy is at most
+  `METAGRAPH_REFRESH_SECONDS` old and is always good enough to render;
+- if the user switches subnet while a re-read is in flight, its result is dropped.
+  Merging netuid 79's metagraph into an 88 table is worse than showing nothing new.
+
+See [../performance/wire_protocol.md](../performance/wire_protocol.md#the-refresh-button-was-the-last-blocking-path).

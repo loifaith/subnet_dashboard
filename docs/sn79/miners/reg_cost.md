@@ -6,7 +6,7 @@ miner's own registration block (shown per-row in the table).
 
 ## Current price
 
-`GET /api/reg-cost?netuid=79[&refresh=1]` — [app.py:1969](../../../app.py#L1969)
+`GET /api/reg-cost?netuid=79[&refresh=1]` — [app.py:2506](../../../app.py#L2506)
 
 - 5-minute TTL per netuid (`REG_COST_CACHE_SECONDS`).
 - Runs `chain_cli.py reg-cost <netuid>` as a **child process**, 120s timeout.
@@ -14,7 +14,7 @@ miner's own registration block (shown per-row in the table).
 This is the canonical example of why chain work is out-of-process: the query is
 ~5 seconds of pure-Python substrate metadata decoding, and run in-process it held
 the GIL for that whole time, pushing unrelated request latency from ~1ms to
-6–400ms. The comment at [app.py:1990-1994](../../../app.py#L1990-L1994) records the
+6–400ms. The comment at [app.py:2540-2541](../../../app.py#L2540-L2541) records the
 measurement. See [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
 
 ## Historical price per registration block

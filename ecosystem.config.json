@@ -31,7 +31,8 @@
       "max_restarts": 10,
       "min_uptime": "10s",
       "env": {
-        "PYTHONUNBUFFERED": "1"
+        "PYTHONUNBUFFERED": "1",
+        "HOT_BOOK_AUTO_SWITCH": "0"
       },
       "error_file": "/root/79/subnet_dashboard/logs/dashboard-error.log",
       "out_file": "/root/79/subnet_dashboard/logs/dashboard-out.log",

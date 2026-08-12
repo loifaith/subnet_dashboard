@@ -10,7 +10,7 @@ Two different endpoints with different jobs. Confusing them is the usual mistake
 | Cache | 60s, keyed `(uid, include_books)` | the daily file itself |
 | Used by | the UID Status modal | the main table's metric columns |
 
-## `/api/uid-status/{uid}` — [app.py:1697](../../../app.py#L1697)
+## `/api/uid-status/{uid}` — [app.py:2150](../../../app.py#L2150)
 
 Query params: `?books=1` for the per-book breakdown, `?refresh=1` to bypass cache.
 Backed by `build_uid_status_response()`
@@ -22,14 +22,40 @@ Works for **foreign miners** because TAOS keys metrics by `agent_id`, not coldke
 
 The cache is bounded at `UID_STATUS_CACHE_MAX` (256) entries; on overflow
 `_store_uid_status_cache()` evicts the oldest by timestamp
-([app.py:1690](../../../app.py#L1690)) — a bounded dict, not a real LRU, but enough
+([app.py:2119](../../../app.py#L2119)) — a bounded dict, not a real LRU, but enough
 to stop unbounded growth from browsing many UIDs.
 
 Summary gauges come from `miner_gauges` (per-UID aggregates); `--books` /
 `?books=1` pulls `agent_gauges` (per-book) and orders books worst→best by
 `weighted_kappa`.
 
-## `/api/uid-metrics` — [app.py:1732](../../../app.py#L1732)
+## The wire shape is not the shape the UI uses
+
+`/api/uid-metrics` returns **columns**, not per-UID objects:
+
+```json
+{"uids": [1,2,...], "fields": ["incentive","kappa",...],
+ "cols": {"incentive": [...], "kappa": [...]},
+ "deltas": {"real_pnl": [...], "unrl_pnl": [...], "volume": [...]}}
+```
+
+`rehydrateUidMetrics()` in [miners.js](../../../asset/miners.js) turns that back
+into `uidMetrics[uid][field]` on arrival, so only that one function knows the wire
+format. Three things were removed to get from 58 KB gzipped to 23 KB:
+
+- **`prev_metrics`** was a byte-for-byte duplicate of `metrics` — half the payload —
+  and existed to draw delta arrows on three fields. The server computes those
+  deltas now (`UID_METRICS_DELTA_FIELDS`).
+- **`UID_METRICS_DROP_FIELDS`** — four fields the client never reads plus one it can
+  derive. A denylist, so a new metric still reaches the UI without a server change;
+  check with `grep -c '\bfield\b' asset/miners.js` before adding to it.
+- **Three redundant date renderings**, dropped only when every row carries
+  `reg_date_utc_iso`, because the client's fallback path is what reads them on older
+  files.
+
+`?shape=full` returns the original shape for anything outside the dashboard.
+
+## `/api/uid-metrics` — [app.py:2243](../../../app.py#L2243)
 
 Default path: `get_cached_metrics_payload()` reads today's daily file and returns
 `metrics` + `prev_metrics` (the previous snapshot, for delta arrows).

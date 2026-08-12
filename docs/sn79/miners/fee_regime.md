@@ -13,8 +13,8 @@ Get this backwards and every conclusion inverts.
 
 | Path | Source |
 |---|---|
-| `GET /api/fee-regime?books=1&refresh=1` | [app.py:1840](../../../app.py#L1840) |
-| `GET /api/fee-regime/history?days=7&day=&uid=&limit=&book_points=` | [app.py:1902](../../../app.py#L1902) |
+| `GET /api/fee-regime?books=1&refresh=1` | [app.py:2382](../../../app.py#L2382) |
+| `GET /api/fee-regime/history?days=7&day=&uid=&limit=&book_points=` | [app.py:2439](../../../app.py#L2439) |
 
 Backed by [fee_rate.py](../../../79Miners/monitor/fee_rate.py).
 
@@ -25,7 +25,7 @@ Backed by [fee_rate.py](../../../79Miners/monitor/fee_rate.py).
 1. **The `books` payload is never cached** — only the summary is. A `?books=1`
    request always goes upstream, and the resulting summary still populates the
    cache so a later summary-only request has something to serve.
-2. **`_cached_fallback()`** ([app.py:1858](../../../app.py#L1858)): if the upstream
+2. **`_cached_fallback()`** ([app.py:2408](../../../app.py#L2408)): if the upstream
    query fails or returns an error, the endpoint serves the last good summary with
    `stale: true` added rather than failing. A transient TAOS miss shows a slightly
    old regime instead of an empty panel. Only when there is *no* cached payload at

@@ -70,25 +70,32 @@ See [`loadData()`](../../asset/miners.js).
 | Auth | [auth.py](../../auth.py), [manage_users.py](../../manage_users.py) | allowlist + signed cookie |
 
 `app.py` puts `79Miners/monitor` and `88Miners/monitor` on `sys.path` at import time
-([app.py:30-34](../../app.py#L30-L34)), which is why endpoints can
+([app.py:32-34](../../app.py#L32-L34)), which is why endpoints can
 `from regbot import ...` with no package prefix. Domain modules are imported
 **inside the endpoint function**, not at module top level — a broken or heavy module
 degrades one endpoint instead of failing startup.
 
 ## Data flow for one dashboard refresh (SN79)
 
-1. `GET /api/metagraph-data?netuid=79` — served from a cache a background worker
-   keeps warm at 90s. A request never runs [load_metagraph.py](../../load_metagraph.py);
-   an expired entry is returned immediately while the refresh happens behind it.
+1. `GET /api/metagraph-identity` and `GET /api/metagraph-state` — the two halves of
+   the metagraph, split because identity changes on registration churn and state
+   changes every block. Served from a cache a background worker keeps warm at 90s,
+   seeded from disk at startup. A request never runs
+   [load_metagraph.py](../../load_metagraph.py); an expired entry is returned
+   immediately while the refresh happens behind it.
 2. Then, **all at once** — nothing below step 1 depends on anything else below it:
    `/api/miner-params` (owned UIDs), `/api/uid-metrics` (today's
    `miner_status/<date>.json`), `/api/fee-regime`, `/api/fee-regime/history`,
    `/api/sim-id`, `/api/reg-cost`, `/api/alpha-price`.
-3. Background bars poll `/api/regbot/active` (20s), `/api/regbot/batch/active` (15s),
-   `/api/unstake/active` (20s), and the page auto-refreshes every 5 minutes — all
-   paused while the tab is hidden.
+3. `GET /api/events` opens a Server-Sent Events stream. Workers announce which
+   topic changed; the client re-fetches that one endpoint conditionally. While the
+   stream is up the bar polls drop from 15-20s to 120s; if it drops they resume, so
+   the stream is never the only path.
+4. Every fetch sends `If-None-Match`, so an unchanged payload costs a 304 with no
+   body. An idle open tab is ~0.4 KB/min.
 
 Nothing in that path opens a chain connection or an SSH connection inside the web
 process. Both used to, and
 [../sn79/performance/page_load_audit.md](../sn79/performance/page_load_audit.md) is
-what they cost.
+what they cost. What each response actually weighs, and why, is
+[../sn79/performance/wire_protocol.md](../sn79/performance/wire_protocol.md).

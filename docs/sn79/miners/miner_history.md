@@ -20,8 +20,8 @@ values are stored, so a row is sparse rather than full of nulls.
 
 **Read** via:
 
-- `GET /api/miner-history` → `{tracked_uids, days}` — [app.py:1791](../../../app.py#L1791)
-- `GET /api/miner-history/{uid}?days=7&day=&limit=` — [app.py:1801](../../../app.py#L1801)
+- `GET /api/miner-history` → `{tracked_uids, days}` — [app.py:2333](../../../app.py#L2333)
+- `GET /api/miner-history/{uid}?days=7&day=&limit=` — [app.py:2343](../../../app.py#L2343)
 
 `days` is clamped to 1–90. A UID not in `list_my_miner_uids()` returns 404 — the
 history only exists for miners you own.
@@ -53,7 +53,7 @@ agent_history/<uid>.jsonl
 history is the record of *what was attempted*, not only what succeeded.
 
 **Read** via `GET /api/agent-history/{uid}?limit=50` (clamped 1–500) —
-[app.py:1806](../../../app.py#L1806). A UID with no file returns
+[app.py:2366](../../../app.py#L2366). A UID with no file returns
 `{"count": 0, "entries": []}` rather than 404, since "never switched" is normal.
 
 Timestamps are rendered in `Asia/Tokyo` (`TOKYO = ZoneInfo("Asia/Tokyo")`).

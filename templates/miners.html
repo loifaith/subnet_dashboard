@@ -1901,6 +1901,18 @@
         font-family: monospace;
         font-size: 0.78rem;
       }
+
+      /* A forced refresh re-reads the chain (~3s) behind an already-painted page.
+         The spinning icon is the only sign it is still running. */
+      @keyframes refresh-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #refreshBtn.refreshing .bi-arrow-clockwise {
+        display: inline-block;
+        animation: refresh-spin 900ms linear infinite;
+      }
     </style>
   </head>
   <body>

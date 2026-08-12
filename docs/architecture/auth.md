@@ -10,7 +10,7 @@ Stdlib-only shared login. No sessions table, no external dependency —
 | User allowlist | `auth_users.json` | `{username: "salt$pbkdf2_hex"}`, chmod 600, gitignored |
 | Signing key | `.dashboard_secret_key` | 32 random bytes hex, auto-created on first import, chmod 600, gitignored |
 | Cookie | `dashboard_session` | `base64url(username:expiry).hmac_sha256` |
-| Gate | `auth_gate` middleware, [app.py:469](../../app.py#L469) | wraps every request |
+| Gate | `auth_gate` middleware, [app.py:702](../../app.py#L702) | wraps every request |
 
 Passwords are PBKDF2-HMAC-SHA256, **260,000 iterations**, per-user 16-byte salt.
 Verification uses `hmac.compare_digest`. Sessions default to 30 days
@@ -26,7 +26,7 @@ valid cookie                     → pass through
 anything else                    → 303 to /login?next=<path>
 ```
 
-The **loopback bypass** ([app.py:476](../../app.py#L476)) lets `curl` and scripts on
+The **loopback bypass** ([app.py:698](../../app.py#L698)) lets `curl` and scripts on
 the dashboard host hit the API without a cookie. It trusts `request.client.host`,
 which is the real TCP peer only because port 12800 is exposed directly with no
 reverse proxy. **If you ever put nginx in front of this, that check becomes a
@@ -35,10 +35,10 @@ comment says the same thing; treat it as a deployment invariant.
 
 The API/HTML split matters: a page navigation gets a redirect, but a background
 `fetch()` gets a 401 it can detect. The frontend wraps `window.fetch` once
-([miners.js:6](../../asset/miners.js#L6)) and bounces to `/login` on any
+([miners.js:8](../../asset/miners.js#L8)) and bounces to `/login` on any
 401, so an expired session mid-session doesn't leave silently-dead panels.
 
-`_safe_next_path()` ([app.py:458](../../app.py#L458)) only accepts same-site relative
+`_safe_next_path()` ([app.py:691](../../app.py#L691)) only accepts same-site relative
 paths for the post-login redirect — this is the open-redirect guard.
 
 ## Managing users
@@ -59,7 +59,7 @@ system:
 
 - No per-user authorisation — any logged-in user can spend TAO.
 - The cookie is `httponly=True, samesite="lax"`
-  ([app.py:518](../../app.py#L518)). There is no CSRF token, so `lax` is what stops
+  ([app.py:751](../../app.py#L751)). There is no CSRF token, so `lax` is what stops
   cross-site POSTs; keep it if you add state-changing form posts.
 - The session payload carries no server-side revocation list. Rotating
   `.dashboard_secret_key` is the only way to invalidate outstanding sessions, and

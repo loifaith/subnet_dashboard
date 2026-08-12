@@ -16,12 +16,12 @@ Reference design: [`/root/79/BT_79_Dashboard/docs/performance/`](../../../../BT_
 
 "Usable" = the app's own `loadingOverlay` is gone **and** the miner table has painted.
 
-| Client | before | after | |
+| Client | before | after this pass | after [wire_protocol.md](wire_protocol.md) |
 |---|---|---|---|
-| loopback, 0 RTT | 1 130 ms | **411 ms** | −64 % |
-| 100 ms RTT / 10 Mbps (EU broadband) | 1 914 ms | **883 ms** | −54 % |
-| 250 ms RTT / 8 Mbps (Asia → Finland) | 2 866 ms | **1 654 ms** | −42 % |
-| any of the above, cold metagraph | +2 900 ms | **no cliff** | eliminated |
+| loopback, 0 RTT | 1 130 ms | 411 ms | **333 ms** |
+| 100 ms RTT / 10 Mbps (EU broadband) | 1 914 ms | 883 ms | — |
+| 250 ms RTT / 8 Mbps (Asia → Finland) | 2 866 ms | 1 654 ms | **1 385 ms** |
+| any of the above, cold metagraph | +2 900 ms | **no cliff** | no cliff |
 
 | | before | after |
 |---|---|---|
@@ -30,6 +30,9 @@ Reference design: [`/root/79/BT_79_Dashboard/docs/performance/`](../../../../BT_
 | same-origin `/api/*` | 1 286 KB | **145 KB** |
 | CDN (Bootstrap, Icons, Chart.js) | 138 KB | 138 KB |
 | **total** | **≈ 1 797 KB** | **≈ 297 KB** (−83 %) |
+
+A second pass took this further — 264 KB on a cold load, 6.3 KB on a reload and
+0.38 KB/min for an idle tab. See [wire_protocol.md](wire_protocol.md).
 
 Repeat loads are cheaper again: the document, `/js/miners.js` and every cached JSON
 endpoint answer `304` with a zero-byte body when nothing has changed.
@@ -275,14 +278,14 @@ All read from the environment, all with working defaults:
 
 Not done, in payoff order:
 
+0. ~~Trim `/api/uid-metrics`~~ and the rest of the payload work — **done**, see
+   [wire_protocol.md](wire_protocol.md).
 1. **Self-host the CDN assets.** Bootstrap, Bootstrap Icons and Chart.js are 138 KB
    across 4 requests to `cdn.jsdelivr.net`, and the render-blocking stylesheet costs
    a DNS + TCP + TLS handshake to a second origin before first paint — roughly 4 RTTs,
    which at 250 ms RTT is most of the remaining 738 ms FCP. Serving them from
    `/asset/` puts them on the connection that is already open.
-2. **Trim `/api/uid-metrics` further.** 56 KB gzipped is now the largest same-origin
-   payload. It ships every metric for every UID; the table renders a subset.
-3. **A `/api/health` endpoint** reporting last-success timestamps per worker. Three
+2. **A `/api/health` endpoint** reporting last-success timestamps per worker. Three
    of the seven workers are new, and worker failure is still invisible in the UI —
    which is how [known_issues.md](../tricks/known_issues.md) issue 1 stayed unnoticed
    for weeks.
