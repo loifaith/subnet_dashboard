@@ -2,7 +2,7 @@
 
 [79Miners/RegBot/run79.sh](../../../79Miners/RegBot/run79.sh) is a **template**, not a
 script that is run as-is. `_build_script()`
-([regbot.py:356](../../../79Miners/monitor/regbot.py#L356)) reads it, rewrites six
+([regbot.py:377](../../../79Miners/monitor/regbot.py#L377)) reads it, rewrites six
 specific lines, and scp's the result to the target box.
 
 ## The substitutions

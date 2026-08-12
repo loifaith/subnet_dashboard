@@ -149,6 +149,35 @@ Design points that are load-bearing:
   publish from inside their own GET handler, so the tab that just fetched is told
   about its own result; without that check it becomes a fetch loop.
 
+**The metagraph is a topic too, and the client subscribes to it.** The server has
+always published `metagraph:<netuid>` when a refresh landed a snapshot whose ETag
+changed. The client used to drop it on the floor — the handler read
+`if (!entry) return; // e.g. metagraph:<netuid>, which loadData owns` — while
+`loadData` polled on a flat 5-minute timer. The table could sit **5 minutes stale
+with the "there is new data" notification arriving and being discarded.**
+
+Subscribing makes the table track the worker instead of the clock. Measured over
+210s with a real browser, refetches landed at **32s, 122s and 212s** — every 90s,
+i.e. `METAGRAPH_REFRESH_SECONDS`, not the 300s poll:
+
+| Half | Status | Why |
+|---|---|---|
+| `/api/metagraph-identity` | **304** | registrations are rare; no body |
+| `/api/metagraph-state` | 200, ~5 KB gz | emission/incentive change every block |
+
+This is **fresher, not cheaper**: 300s → 90s costs about 5 KB per push, because the
+state half genuinely changes every block and so every notification is a real
+change. The identity half stays a zero-body 304.
+
+Three guards, all necessary because the topic is per-netuid:
+
+- ignore a netuid that is not the one on screen — the server warms three, and
+  merging another subnet's metagraph into this table is the hazard the
+  subnet-switch path already guards against;
+- ignore it while a forced re-read is in flight, since that is already fetching
+  newer data and will repaint itself;
+- ignore it when the tab is hidden.
+
 **Publish on data change, not on cache miss.** `/api/uid-metrics` originally
 published from its byte-cache miss, which raced the very fetch that caused it: the
 notification arrived before that fetch had stored its ETag, so the client could not
@@ -157,6 +186,24 @@ tell it already had the data and re-downloaded all 22.5 KB. The publish belongs 
 changed.
 
 ---
+
+## Bodies are compressed once, not once per request
+
+The byte caches stop the hot paths re-serialising, but every 200 still handed
+those identical bytes to `GZipMiddleware` to be compressed again, in the event
+loop, at level 9 — **16.7 ms for `/js/miners.js`**, 5.4 ms for `/miners`, 3.9 ms
+for `/api/metagraph-data`.
+
+`_maybe_gzip()` compresses once per distinct payload and keeps the result, keyed
+by ETag. Starlette skips any response that already carries `Content-Encoding`, so
+the pre-compressed body passes through untouched — and because it *also* skips
+adding `Vary` on that path, `_maybe_gzip` sets `Vary: Accept-Encoding` itself.
+Without that, a shared cache could hand gzipped bytes to a client that never asked
+for them.
+
+Verified by decompressing each response and comparing it byte-for-byte against the
+same endpoint fetched with `Accept-Encoding: identity`. Full detail in
+[cache.md](cache.md#10-pre-compressed-bodies).
 
 ## Two TTLs that guaranteed a slow request every cycle
 

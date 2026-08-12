@@ -6,16 +6,30 @@ miner's own registration block (shown per-row in the table).
 
 ## Current price
 
-`GET /api/reg-cost?netuid=79[&refresh=1]` — [app.py:2506](../../../app.py#L2506)
+`GET /api/reg-cost?netuid=79[&refresh=1]` — [app.py:2782-2783](../../../app.py#L2782-L2783)
 
-- 5-minute TTL per netuid (`REG_COST_CACHE_SECONDS`).
-- Runs `chain_cli.py reg-cost <netuid>` as a **child process**, 120s timeout.
+- Served from `chain_daemon.py`'s **block-paced poller**: a ~1ms socket read with
+  no chain query behind it, and never more than one block (~12s) old.
+- `_reg_cost_refresh_worker` therefore refreshes every 10s
+  (`REG_COST_REFRESH_FAST_SECONDS`) instead of 240s — it costs nothing, and the
+  daemon polls once regardless of how often we ask.
+- **Fallback**: if the daemon is unreachable it runs `chain_cli.py reg-cost
+  <netuid>` as a child process (120s timeout) and the worker drops back to 240s.
+  The interval is derived from the recorded `source`, never assumed — running the
+  2.1s subprocess every 10s would be far worse than the 240s it replaced.
 
-This is the canonical example of why chain work is out-of-process: the query is
-~5 seconds of pure-Python substrate metadata decoding, and run in-process it held
-the GIL for that whole time, pushing unrelated request latency from ~1ms to
-6–400ms. The comment at [app.py:2540-2541](../../../app.py#L2540-L2541) records the
-measurement. See [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
+The polling loop is modelled on `BT_79_Dashboard/scripts/reg_price_watcher.py` and
+the reg bot's `ChainPollSession`: registration cost only changes when a block
+lands, so fast-poll at 1s to catch the turn and settle-sleep 10s once a new block
+is seen. Verified tracking blocks 8828405 → 8828408 with the recycle price decaying
+each block, where it used to be up to 240s stale.
+See [../performance/chain_daemon.md](../performance/chain_daemon.md).
+
+This was also the canonical example of why chain work is out-of-process: the query
+is ~5 seconds of pure-Python substrate metadata decoding, and run in-process it
+held the GIL for that whole time, pushing unrelated request latency from ~1ms to
+6–400ms. That rule is unchanged — the daemon is its own process.
+See [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
 
 ## Historical price per registration block
 

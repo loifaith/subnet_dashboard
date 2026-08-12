@@ -6,10 +6,10 @@ What the page shows when the subnet selector is set to 88.
 
 | Path | Source |
 |---|---|
-| `GET /api/investing88/days` | [app.py:2809](../../../app.py#L2809) — all UIDs: days table + scores + previous-day scores |
-| `GET /api/investing88/miner/{uid}` | [app.py:2747](../../../app.py#L2747) — one miner's full detail |
-| `GET /api/investing88/cache-status` | [app.py:2863](../../../app.py#L2863) |
-| `POST /api/investing88/sync` | [app.py:2873](../../../app.py#L2873) — force a sync now |
+| `GET /api/investing88/days` | [app.py:3051](../../../app.py#L3051) — all UIDs: days table + scores + previous-day scores |
+| `GET /api/investing88/miner/{uid}` | [app.py:2989](../../../app.py#L2989) — one miner's full detail |
+| `GET /api/investing88/cache-status` | [app.py:3105](../../../app.py#L3105) |
+| `POST /api/investing88/sync` | [app.py:3115](../../../app.py#L3115) — force a sync now |
 
 ## `/days` — the table columns
 
@@ -27,7 +27,7 @@ Returns three maps:
 `{}` and the deltas simply don't render; a failure to load it is logged as a warning
 and never fails the request.
 
-`_extract_i88_scores()` ([app.py:2798](../../../app.py#L2798)) projects only the
+`_extract_i88_scores()` ([app.py:3040](../../../app.py#L3040)) projects only the
 eleven fields in `_I88_SCORE_FIELDS`, so the payload stays small regardless of what
 the upstream returns.
 

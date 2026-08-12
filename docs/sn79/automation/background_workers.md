@@ -8,13 +8,14 @@ and cancelled on shutdown.
 | `_miner_status_refresh_worker` | 900s | runs `miner_status_cache.py` as a **subprocess** → daily status, history, fee history, auto-switch |
 | `_investing88_daily_sync_worker` | 3600s | runs `investing88_cache.py` as a subprocess |
 | `_sim_id_watch_worker` | 60s | polls the sim epoch, Telegram-alerts on change |
-| `_miner_master_keepalive_worker` | 300s | re-warms SSH masters to every miner box |
+| `_miner_master_keepalive_worker` | 300s | re-warms one SSH master per box — params IPs **and** all 12 RegBot presets |
 | `_regbot_balance_refresh_worker` | 300s | one chain child process, all coldkeys |
 | `_coldkeys_watch_worker` | 3600s | runs the coldkey/IP collector, diffs it |
 | `_metagraph_refresh_worker` | 90s | keeps netuid 79/71/88 metagraphs warm — a **request must never trigger the chain subprocess** |
-| `_regbot_active_scan_worker` | 20s | the SSH active-run scan across all 12 presets |
+| `chaind` reg-cost pollers | block-paced (1s / 10s) | not in `lifespan()` — its own pm2 process, see [../performance/chain_daemon.md](../performance/chain_daemon.md) |
+| `_regbot_active_scan_worker` | 20s busy / **120s idle** | the SSH active-run scan across all 12 presets |
 | `_fee_regime_refresh_worker` | 240s | the TAOS fee-regime summary (2.2s cold) |
-| `_reg_cost_refresh_worker` | 240s | registration cost per warm netuid (2.1s cold) |
+| `_reg_cost_refresh_worker` | **10s via chaind** / 240s fallback | registration cost per warm netuid |
 
 Workers also **publish change notifications**. When a worker's payload gets a new
 ETag it calls `_publish(topic, etag)`, which fans out to every `/api/events`
@@ -52,8 +53,32 @@ follows it — keep new ones consistent.
 
 **`_sleep_until_next_tick`, not a flat `sleep(INTERVAL)`.** A flat sleep placed after
 the work makes the real cadence `INTERVAL + work`, which is not what any of the
-reasoning below assumes. The three cache-warming workers schedule on a deadline;
-the rest are unchanged, since their intervals dwarf their work.
+reasoning below assumes. Measured on the metagraph worker: three netuids at ~3s
+each plus 2s gaps turned a nominal 90s into 105s against a 120s TTL — a 15s margin
+a slow chain would erase, at which point every copy reads as stale.
+
+**Every** loop in `lifespan()` now schedules this way. It used to be only the four
+cache-warmers, on the reasoning that the rest had intervals dwarfing their work —
+which is exactly the assumption that fails silently. `_miner_status_refresh_worker`
+runs an SSH-driven subprocess with no upper bound against a nominal 900s, and
+`_regbot_active_scan_worker` does 0.56s of real work every 20s. As a deadline a
+worker holds its interval until the work itself exceeds it, then runs back-to-back
+instead of falling further behind every cycle.
+
+## Work nobody is watching should slow down
+
+`_regbot_active_scan_worker` is the highest-frequency remote work in the service:
+12 SSH probes every 20s is **~2,160 connections an hour**, run forever regardless
+of whether anything is happening.
+
+It only needs to be fast when there is something to watch. When no run is active
+**and** no browser is subscribed to the event stream, it drops to
+`REGBOT_ACTIVE_SCAN_IDLE_SECONDS` (120s) — a ~6× reduction with no perceptible
+change, because either condition returning restores the fast cadence on the very
+next tick, and a run started through this dashboard publishes immediately anyway.
+
+`_sse_subscribers` being non-empty is the "somebody is looking" signal. It is the
+only place a worker consults it; if you add another backoff, use the same test.
 
 ## Cadence has to sit under the consumer's staleness window
 
@@ -78,9 +103,14 @@ reloaded every 300s — so *every* automatic refresh landed exactly on expiry an
 server response". A TTL equal to the consumer's poll interval is the worst possible
 value it can have.
 
-The metagraph worker also refreshes its netuids **one at a time with a 2s gap**
-rather than gathering them. Each is a chain connection, and three at once is exactly
-the burst that made the balance sweep starve unrelated queries — see
+The metagraph worker still refreshes its netuids **one at a time**, but the gap
+between them is now `METAGRAPH_WARM_GAP_SECONDS` (0.5s), not 2s. The gap existed
+because each netuid was its own child process opening its own chain connection, and
+three of those at once is the burst that made the balance sweep starve unrelated
+queries. Through `chaind` all three share the one connection it already holds, so
+there is no burst to space out — the gap remains only for the fallback path, where
+each netuid really is a fresh subprocess again. Cycle cost: **12.8s → ~1.4s**. See
+[../performance/chain_daemon.md](../performance/chain_daemon.md) and
 [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
 
 ## Deferred imports
@@ -94,17 +124,23 @@ one worker at its first tick, not application startup.
 `_investing88_daily_sync_worker` **sleeps first, then works**:
 
 ```python
+await asyncio.sleep(INTERVAL)         # <- once, before the loop
 while True:
-    await asyncio.sleep(INTERVAL)     # <- before, not after
+    started = time.time()
     await _run_investing88_sync_subprocess()
+    await _sleep_until_next_tick(started, INTERVAL)
 ```
+
+The initial sleep is outside the loop so the deadline scheduling inside it still
+applies — this sync can run for many minutes, and a flat sleep after it would push
+each run later than the last.
 
 That is why `_bootstrap_investing88_cache()` exists as a separate one-shot task —
 without it, a fresh start would have no SN88 cache for a full hour.
 
 Note the names and the reality have drifted: `INVESTING88_SYNC_HOUR` (19) and
 `INVESTING88_SYNC_TZ` (`Asia/Tokyo`) are defined at
-[app.py:42-44](../../../app.py#L42-L44) but the worker just loops hourly and does not
+[app.py:53-55](../../../app.py#L53-L55) but the worker just loops hourly and does not
 consult them. The 19:00 Tokyo boundary lives inside
 `investing88_cache.py`'s day-keying instead.
 

@@ -70,7 +70,7 @@ See [`loadData()`](../../asset/miners.js).
 | Auth | [auth.py](../../auth.py), [manage_users.py](../../manage_users.py) | allowlist + signed cookie |
 
 `app.py` puts `79Miners/monitor` and `88Miners/monitor` on `sys.path` at import time
-([app.py:32-34](../../app.py#L32-L34)), which is why endpoints can
+([app.py:33-35](../../app.py#L33-L35)), which is why endpoints can
 `from regbot import ...` with no package prefix. Domain modules are imported
 **inside the endpoint function**, not at module top level — a broken or heavy module
 degrades one endpoint instead of failing startup.

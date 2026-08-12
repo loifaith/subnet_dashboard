@@ -146,9 +146,30 @@ CHAIN_CLI = os.path.join(_HERE, "chain_cli.py")
 
 
 async def run_chain_cli(args: List[str], timeout: float) -> Dict[str, Any]:
-    """Run chain_cli.py and return its parsed payload. Never raises — a failed child comes
-    back as {"ok": False, "error": ...} so callers have one shape to handle."""
+    """Run a chain query and return its payload. Never raises — a failure comes back as
+    {"ok": False, "error": ...} so callers have one shape to handle.
+
+    Prefers chain_daemon.py, which answers over a Unix socket from a connection it
+    already holds open. The child-process path below pays ~1.8s of fixed setup
+    (`import bittensor` 0.77s, then connect + runtime-metadata decode ~1.04s) before
+    it can run a query that itself takes 0.02-0.4s. Measured through the daemon:
+    reg-cost 2.2s -> 0.001s (served from its block-paced poller, no chain call at
+    all), balances for 12 coldkeys 3.10s -> 0.31s.
+
+    The daemon is strictly an optimisation. chain_client.call() returns None when it
+    cannot be reached — a missing socket costs one failed connect() — and we drop
+    straight through to the subprocess, which behaves exactly as it always did. A
+    daemon that *answers* with ok=False is a real chain error and is returned as-is,
+    so a genuine failure is not quietly retried down a second path.
+    """
     import sys
+
+    if args:
+        from chain_client import call as chain_daemon_call
+
+        payload = await chain_daemon_call(args[0], list(args[1:]), timeout=timeout)
+        if payload is not None:
+            return payload
 
     try:
         proc = await asyncio.create_subprocess_exec(

@@ -2,14 +2,20 @@
 
 ## PM2 apps
 
-Defined in [ecosystem.config.json](../../ecosystem.config.json). All three use the
+Defined in [ecosystem.config.json](../../ecosystem.config.json). All four use the
 repo's own venv interpreter `/root/79/subnet_dashboard/.venv/bin/python`.
 
 | App | Script | cwd | Port | Purpose |
 |---|---|---|---|---|
 | `dashboard` | `app.py` | repo root | **12800** | the live dashboard |
+| `chaind` | `chain_daemon.py` | `79Miners/monitor` | *(unix socket)* | one held chain connection, shared |
 | `backend_api` | `backend_api.py` | repo root | **9900** | legacy SN71 Postgres CRUD |
 | `status_server` | `status_server.py` | `79Miners/monitor` | **9800** | SN79 miner status feed |
+
+`chaind` listens on `/tmp/.sn79-chaind.sock` (0600), not a TCP port — it is
+strictly local and never reachable from off-box. It is a **latency optimisation
+with a full fallback**: stopping it makes chain reads slow again and nothing else.
+See [../sn79/performance/chain_daemon.md](../sn79/performance/chain_daemon.md).
 
 Logs land in [logs/](../../logs/) as `<app>-out.log` / `<app>-error.log`.
 Note `logging.basicConfig(level=INFO)` writes to **stderr**, so ordinary INFO lines
@@ -23,8 +29,11 @@ make `X-Cache` meaningless. See
 [../sn79/performance/page_load_audit.md](../sn79/performance/page_load_audit.md).
 
 There is **no reverse proxy** in front of 12800 — uvicorn is the edge. Compression
-(`GZipMiddleware`, >1KB) and cache validation (weak ETags) therefore happen in
-`app.py` or not at all.
+and cache validation (weak ETags) therefore happen in `app.py` or not at all.
+Byte-cached responses over 1KB are served **pre-compressed** from `_maybe_gzip()`,
+which sets `Content-Encoding` and `Vary` itself; `GZipMiddleware` (>1KB) still
+covers everything else. See
+[../sn79/performance/cache.md](../sn79/performance/cache.md#10-pre-compressed-bodies).
 
 ## Start / restart
 
@@ -53,7 +62,7 @@ See [../sn79/tricks/process_detachment.md](../sn79/tricks/process_detachment.md)
 `app.py` reads plain `os.getenv` with in-code defaults, so **the defaults below are
 what actually runs** unless PM2 injects otherwise.
 
-### Timing / worker cadence ([app.py:36-101](../../app.py#L36-L101))
+### Timing / worker cadence ([app.py:37-102](../../app.py#L37-L102))
 
 | Variable | Default | Effect |
 |---|---|---|

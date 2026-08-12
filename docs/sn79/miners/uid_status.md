@@ -10,7 +10,7 @@ Two different endpoints with different jobs. Confusing them is the usual mistake
 | Cache | 60s, keyed `(uid, include_books)` | the daily file itself |
 | Used by | the UID Status modal | the main table's metric columns |
 
-## `/api/uid-status/{uid}` — [app.py:2150](../../../app.py#L2150)
+## `/api/uid-status/{uid}` — [app.py:2375](../../../app.py#L2375)
 
 Query params: `?books=1` for the per-book breakdown, `?refresh=1` to bypass cache.
 Backed by `build_uid_status_response()`
@@ -22,7 +22,7 @@ Works for **foreign miners** because TAOS keys metrics by `agent_id`, not coldke
 
 The cache is bounded at `UID_STATUS_CACHE_MAX` (256) entries; on overflow
 `_store_uid_status_cache()` evicts the oldest by timestamp
-([app.py:2119](../../../app.py#L2119)) — a bounded dict, not a real LRU, but enough
+([app.py:2368](../../../app.py#L2368)) — a bounded dict, not a real LRU, but enough
 to stop unbounded growth from browsing many UIDs.
 
 Summary gauges come from `miner_gauges` (per-UID aggregates); `--books` /
@@ -55,7 +55,7 @@ format. Three things were removed to get from 58 KB gzipped to 23 KB:
 
 `?shape=full` returns the original shape for anything outside the dashboard.
 
-## `/api/uid-metrics` — [app.py:2243](../../../app.py#L2243)
+## `/api/uid-metrics` — [app.py:2461](../../../app.py#L2461)
 
 Default path: `get_cached_metrics_payload()` reads today's daily file and returns
 `metrics` + `prev_metrics` (the previous snapshot, for delta arrows).

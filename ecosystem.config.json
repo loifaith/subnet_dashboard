@@ -40,6 +40,29 @@
       "merge_logs": true
     },
     {
+      "name": "chaind",
+      "script": "chain_daemon.py",
+      "cwd": "/root/79/subnet_dashboard/79Miners/monitor",
+      "interpreter": "/root/79/subnet_dashboard/.venv/bin/python",
+      "instances": 1,
+      "exec_mode": "fork",
+      "watch": false,
+      "autorestart": true,
+      "max_restarts": 50,
+      "min_uptime": "30s",
+      "kill_timeout": 8000,
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CHAIN_DAEMON_SOCKET": "/tmp/.sn79-chaind.sock",
+        "CHAIN_DAEMON_ENDPOINT": "finney",
+        "CHAIN_DAEMON_REG_COST_NETUIDS": "79,88"
+      },
+      "error_file": "/root/79/subnet_dashboard/logs/chaind-error.log",
+      "out_file": "/root/79/subnet_dashboard/logs/chaind-out.log",
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+      "merge_logs": true
+    },
+    {
       "name": "status_server",
       "script": "status_server.py",
       "cwd": "/root/79/subnet_dashboard/79Miners/monitor",

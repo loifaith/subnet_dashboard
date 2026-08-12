@@ -131,6 +131,13 @@ per point), `latest` (only the newest, which is all the books chart plots), `non
 deltas; `full` returns the original per-UID objects and `prev_metrics`, for readers
 outside the dashboard. Slim is 23 KB gzipped against 58 KB.
 
+**`/api/fee-regime?books=1`** — the per-book maker/taker rates behind the Books
+toggle. Served from cache: the same worker tick that produces the summary now keeps
+the books rather than discarding them (**2.8s → ~1ms**).
+
+**`/api/reg-cost?netuid=<n>`** — served from `chaind`'s block-paced poller, so it is
+never more than one block (~12s) old and costs ~1ms. `?refresh=1` is the same read.
+
 **`POST /api/regbot/balance/refresh`** — reads the worker-maintained
 `balance_cache.json` and returns immediately (`cache: hit`), kicking a sweep behind
 the response only if the file is older than `REGBOT_BALANCE_CACHE_SECONDS`

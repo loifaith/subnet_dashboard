@@ -3,7 +3,7 @@
 The header price widget: subnet alpha price over a selectable window
 (24H / 7D / 30D / 90D / ALL), with change %, high and low.
 
-`GET /api/alpha-price?netuid=79&range=7d` — [app.py:2649](../../../app.py#L2649)
+`GET /api/alpha-price?netuid=79&range=7d` — [app.py:2891](../../../app.py#L2891)
 
 ## Source
 
@@ -21,7 +21,7 @@ clean 404, not a crash.
 
 ### 1. mtime-keyed parse cache
 
-`_load_alpha_series()` ([app.py:2582](../../../app.py#L2582)) caches parsed rows
+`_load_alpha_series()` ([app.py:2824](../../../app.py#L2824)) caches parsed rows
 keyed on the file's **mtime**. The source is rewritten hourly, so mtime is an exact
 change signal — and re-parsing ~9k rows of JSON on every poll of an always-visible
 header widget is not worth it. Open and volume are dropped at parse time; nothing
@@ -40,7 +40,7 @@ timestamps are zero-padded `%Y-%m-%d %H:%M`.
 
 ### 3. Downsample by last-of-bucket
 
-`_downsample_last()` ([app.py:2618](../../../app.py#L2618)) thins to
+`_downsample_last()` ([app.py:2860](../../../app.py#L2860)) thins to
 `ALPHA_PRICE_MAX_POINTS` (240) by keeping the **last** row of each bucket, and
 forces the final point to be the true latest.
 
@@ -66,28 +66,52 @@ sparkline.
 through verbatim** — the source file carries no timezone marker, so neither the
 endpoint nor the UI restates them as UTC. Don't add a `Z` to them.
 
-## Staleness: never key it off `updated_at`
+## The history is a DAILY feed, and the headline price is not from it
 
-The collector rewrites the file on a timer **whether or not the feed behind it
-produced anything**. So mtime keeps moving while the series sits still, and
-`updated_at` says when the file was touched, not how current the prices are.
+The candles are hourly but they do not *arrive* hourly. Upstream ships a whole day
+at once, so the newest candle is normally the **previous day's 23:00** and the
+series runs **13–37h behind** — permanently, by design, not as a fault. Observed:
 
-This is not hypothetical. On 2026-08-11 the upstream `88taodata` collector stopped
-after the `2026-08-10 23:00` candle; the zip kept being repackaged every ~15min and
-`updated_at` stayed minutes-fresh while every one of the 129 subnets in it was
-frozen at the same timestamp. The header showed a day-old close as the live price —
-3.6% off the actual chain price by then.
+| sampled (UTC) | newest candle | age |
+|---|---|---|
+| 08-11 04:39 | 08-10 23:00 | 5.7h |
+| 08-11 23:29 | 08-10 23:00 | 24.5h |
+| 08-12 12:15 | 08-11 23:00 | 13.7h — exactly 24 new candles |
 
-So freshness is computed from `latest_candle` (the newest row in the **whole
-series**, not the selected window) via [`_alpha_candle_age_hours()`](../../../app.py#L2587), and `stale` is
-`age_hours > ALPHA_PRICE_STALE_AFTER_HOURS` (env, default 2 — the series is hourly,
-so a multi-hour gap means stopped, not lagging).
+Confirmation: the `08-11 23:00` close is `0.007792887`; the live chain price
+measured on 08-11 was `0.007792486`. The series is one day behind the chain.
 
-Candle timestamps are read as **UTC** for this one calculation. The data supports
-it: when the feed stalled, the gap grew hour-for-hour with wall clock (5.7h, then
-24.5h) — a timezone offset would have held constant.
+> **Caution, learned the hard way.** Sampling this twice inside one daily window
+> looks exactly like a dead feed, and "all 129 subnets in the zip end at the same
+> timestamp" reads as proof of a stall when it is simply what a daily batch looks
+> like mid-cycle. It was misdiagnosed that way once. Judge this across a **day**
+> boundary, never across hours.
 
-To diagnose a frozen chart, check the source rather than this repo:
+Because of that lag the header does **not** take its headline price from this
+endpoint. `renderAlphaPrice()` shows `subnetAlphaPrices[netuid]` — the live chain
+price already fetched by `processMetagraph()`, which runs earlier in the same
+`loadData()` cycle — and uses the series only for the sparkline shape, the
+high/low, and the window start of the change %. Using `current` here left the
+header a permanent ~1 day behind (3.2% out when measured).
+
+### `stale` means the history is overdue, not that the price is wrong
+
+Freshness comes from `latest_candle` (newest row of the **whole series**, not the
+selected window) via [`_alpha_candle_age_hours()`](../../../app.py#L2587); `stale`
+is `age_hours > ALPHA_PRICE_STALE_AFTER_HOURS` (env, **default 30**).
+
+Never key it off `updated_at`: the collector rewrites the file on a timer whether
+or not new candles arrived, so mtime says when the file was *touched*, not how
+current the prices are.
+
+30h sits just past the top of the normal 13–37h band. The original 2h was wrong —
+against a daily feed it lights permanently, which is the same as having no warning
+at all. If you tighten it, do not go below 24h.
+
+Candle timestamps carry no timezone and are read as UTC for this one calculation;
+the daily boundary landing exactly on 23:00 is consistent with that.
+
+### Diagnosing a chart that really has stopped
 
 ```bash
 python - <<'EOF'
@@ -98,16 +122,27 @@ for n in [x for x in z.namelist() if x.startswith('SN79_')]:
 EOF
 ```
 
-If every subnet in the zip ends at the same timestamp, the collector upstream has
-stopped and nothing here can fix it.
+Run it **a day apart**. If the last row has not advanced by ~24 candles between
+runs, the upstream collector has genuinely stopped and nothing here can fix it. A
+single run showing every subnet at one timestamp proves nothing.
 
 ## In the UI
 
-`loadAlphaPrice(range)` → `renderAlphaPrice()` + `renderAlphaPriceChart()`. The line
-colour follows the direction of `change_pct`, resolved against the current theme
-(`alphaPriceLineColor(direction, isDark)`). Range buttons are a delegated click
-handler on `#alphaPriceRanges`.
+`loadAlphaPrice(range)` → `renderAlphaPrice()` + `renderAlphaPriceChart()`. Range
+buttons are a delegated click handler on `#alphaPriceRanges`.
 
-`renderAlphaPriceAge()` marks a stale chip: `.is-stale` on the card dims the value
-and sparkline, and `#alphaPriceAge` shows an amber "`⚠ 25h old`" pill. The chip is
-otherwise unchanged, so a healthy feed shows no extra chrome.
+The chip mixes two sources, so it labels both:
+
+- **headline** — live chain price. Never dimmed: it stays correct however far
+  behind the history runs.
+- **delta** — recomputed as `(live − window first close) / first`, so it ends at
+  *now*, matching the number above it. Stashed on the data object as
+  `_effective_change_pct` so the theme-repaint path (which re-renders from
+  `alphaPriceData`) colours the line by the same figure the chip shows.
+- **`#alphaPriceHistEnd`** — `→ MM-DD HH:MM`, the sparkline's own end date, shown
+  whenever the headline is live. This is what stops the normal daily gap between
+  the two from reading as a bug.
+- **`#alphaPriceAge`** — amber "`⚠ history 14h behind`", only past the 30h
+  threshold. Worded as *history*, not *price*.
+
+A feed inside its normal band shows just the headline, delta and end-date label.

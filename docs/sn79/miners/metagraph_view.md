@@ -13,9 +13,15 @@ emission, coldkey, immunity and age.
   immediately (`X-Cache: stale`) while the refresh runs behind the request. Cold load
   is ~2.9s, warm ~13ms, which is why this is worth the machinery — see
   [../performance/page_load_audit.md](../performance/page_load_audit.md) §3.2.
-- The loader still runs [load_metagraph.py](../../../load_metagraph.py) **as a child
-  process** (5s to spawn, 90s to finish), single-flight per netuid. Never in-process —
-  see [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
+- The loader asks `chain_daemon.py` first, which syncs over a connection it already
+  holds: **~0.46s against ~2.97s** for a fresh child process. If the daemon is
+  unreachable it falls back to running
+  [load_metagraph.py](../../../load_metagraph.py) as a child process (5s to spawn,
+  90s to finish). Single-flight per netuid either way, and never in-process — see
+  [../performance/chain_daemon.md](../performance/chain_daemon.md) and
+  [../performance/chain_subprocess.md](../performance/chain_subprocess.md).
+- Both paths build their payload with `load_metagraph.build_payload()`, so the fast
+  path and the fallback cannot return different shapes.
 - `?refresh=1` forces a fresh load. If it fails and a cached copy exists, the cached
   copy is returned (`X-Cache: stale-error`) rather than an error. A forced read
   landing within `CHAIN_BLOCK_SECONDS` (12s) of the last successful one is answered
@@ -27,6 +33,18 @@ emission, coldkey, immunity and age.
 
 For just the header emission figure, use `GET /api/subnet-emission?netuid=<n>` —
 same warm cache, ~100 bytes instead of ~150KB.
+
+## The table follows the worker, not a timer
+
+The server publishes `metagraph:<netuid>` whenever a refresh lands a snapshot whose
+ETag changed, and **the client subscribes to it**. Measured in a real browser, the
+two halves are refetched at 32s, 122s and 212s after load — every 90s, tracking
+`METAGRAPH_REFRESH_SECONDS` — where `loadData`'s flat 5-minute poll used to be the
+only trigger. Identity comes back `304`; only state carries a body.
+
+This is fresher rather than cheaper: ~5KB per push, because the state half really
+does change every block. Details and the three guards in
+[../performance/wire_protocol.md](../performance/wire_protocol.md).
 
 ## The page does not use this endpoint
 
@@ -70,7 +88,7 @@ is_immune  = age_blocks < immunity_period
 ```
 
 `immunity_period` comes from `subtensor.immunity_period(netuid)`, defaulting to
-10000 blocks if that call fails ([app.py:848](../../../app.py#L848)).
+10000 blocks if that call fails ([app.py:998](../../../app.py#L998)).
 
 Note this uses `last_update`, not the registration block. The *registration*-based
 view (reg date, reg cost, blocks since registration) comes from a different source —
@@ -120,9 +138,11 @@ The `true` is `forceRefresh`, and it reaches three endpoints as `?refresh=1`:
 call.
 
 **None of them gate the paint.** The table renders from the warm metagraph halves
-first — ~89ms from click — and the forced chain re-read runs behind it via
-`forceMetagraphReread()`, repainting when it lands. The Refresh button's icon spins
-until then; the page is interactive throughout. A re-read arriving within one block
+first and the forced chain re-read runs behind it via `forceMetagraphReread()`,
+repainting when it lands. The Refresh button's icon spins until then; the page is
+interactive throughout. Measured after the chain daemon landed: table visible
+**431ms** from navigation, and the whole Refresh cycle — click to button
+re-enabled, including the forced chain read — **682ms**, down from 3314ms. A re-read arriving within one block
 of the last one is answered from cache (`X-Cache: hit-coalesced`) rather than
 repeating a query that cannot produce different numbers.
 

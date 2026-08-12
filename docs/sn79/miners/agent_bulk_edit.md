@@ -1,6 +1,6 @@
 # Bulk agent edit
 
-`PUT /api/agent-bulk` — [app.py:1286](../../../app.py#L1286)
+`PUT /api/agent-bulk` — [app.py:1792](../../../app.py#L1792)
 
 Apply **one partial params change** to many miners at once, optionally switching
 them all to a different sub-agent, and optionally updating that agent's canonical
@@ -34,7 +34,7 @@ The body determines which:
 
 ## Merge, not replace
 
-`_merge_params()` ([app.py:1024](../../../app.py#L1024)) drops `remove` keys, sets
+`_merge_params()` ([app.py:1174](../../../app.py#L1174)) drops `remove` keys, sets
 `set` keys (type-coerced when the key already exists), and leaves every other param
 on the miner untouched. That's the opposite of the single-miner PUT
 ([miner_params.md](miner_params.md)), and it's why this endpoint is safe to use
@@ -59,7 +59,7 @@ per-miner list.
 
 When agent-scoped and no explicit `agent_index` is given, the endpoint looks up the
 target agent's own `agent_id` by scanning `dispatch_example.json` by name
-([app.py:1239](../../../app.py#L1239)). If that lookup fails,
+([app.py:1467](../../../app.py#L1467)). If that lookup fails,
 `defaults_updated` comes back `false` and only the miners are changed — the miners
 are never left un-updated because the defaults file was unreadable.
 

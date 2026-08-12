@@ -21,7 +21,7 @@ the dashboard**. Knowing which files are dead saves a lot of reading.
 | `.env` / `.env.example` | `OPENROUTER_API_KEY`, `SCRAPINGDOG_API_KEY` | only `backend_api.py` loads it |
 
 Verified: `app.py` renders exactly two templates —
-`login.html` and `miners.html` ([app.py:673](../../app.py#L673)).
+`login.html` and `miners.html` ([app.py:821](../../app.py#L821)).
 
 ## Live files
 

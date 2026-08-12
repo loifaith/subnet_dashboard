@@ -13,8 +13,8 @@ Get this backwards and every conclusion inverts.
 
 | Path | Source |
 |---|---|
-| `GET /api/fee-regime?books=1&refresh=1` | [app.py:2382](../../../app.py#L2382) |
-| `GET /api/fee-regime/history?days=7&day=&uid=&limit=&book_points=` | [app.py:2439](../../../app.py#L2439) |
+| `GET /api/fee-regime?books=1&refresh=1` | [app.py:2600](../../../app.py#L2600) |
+| `GET /api/fee-regime/history?days=7&day=&uid=&limit=&book_points=` | [app.py:2681](../../../app.py#L2681) |
 
 Backed by [fee_rate.py](../../../79Miners/monitor/fee_rate.py).
 
@@ -22,10 +22,22 @@ Backed by [fee_rate.py](../../../79Miners/monitor/fee_rate.py).
 
 `FEE_REGIME_CACHE_SECONDS = 300`. Two details worth knowing:
 
-1. **The `books` payload is never cached** — only the summary is. A `?books=1`
-   request always goes upstream, and the resulting summary still populates the
-   cache so a later summary-only request has something to serve.
-2. **`_cached_fallback()`** ([app.py:2408](../../../app.py#L2408)): if the upstream
+1. **Both shapes are cached — the summary and the books.** This used to cache only
+   the summary and `pop()` the books, so `?books=1` was the one query shape that
+   bypassed every cache branch and always went upstream: **measured 2.3-3.4s on
+   every click of the Books toggle.**
+
+   The waste was total. `fetch_fee_rates()` is the entire ~2.8s cost and already
+   returns per-book maker/taker rates; `build_fee_regime_summary()` derives `books`
+   from them with local arithmetic and no further upstream call. So the worker paid
+   for the books every 240s, deleted them, and the next click spent another 2.8s
+   regenerating 8.4KB that had been in memory moments earlier. **2.8s → 73ms**
+   click-to-rendered, measured in a real browser.
+
+   If the upstream is down, `_cached_fallback()` carries the books through when the
+   caller asked for them — dropping that key turns a degraded answer into a broken
+   panel.
+2. **`_cached_fallback()`** ([app.py:2645](../../../app.py#L2645)): if the upstream
    query fails or returns an error, the endpoint serves the last good summary with
    `stale: true` added rather than failing. A transient TAOS miss shows a slightly
    old regime instead of an empty panel. Only when there is *no* cached payload at

@@ -6,6 +6,7 @@ micro-optimisation. The measurements are preserved in the source comments.
 | Doc | Problem | Result |
 |---|---|---|
 | [chain_subprocess.md](chain_subprocess.md) | substrate's pure-Python metadata decode holds the GIL; an unrelated request waited **13.7 s** | every chain query runs in a child process; one connection per run |
+| [chain_daemon.md](chain_daemon.md) | **~1.8 s of every chain call was `import bittensor` + connect + metadata decode, for ~0.5 s of work** | one held `AsyncSubtensor`; metagraph **2.97 s → 0.46 s**, reg cost **2.2 s → ~1 ms** |
 | [ssh_multiplexing.md](ssh_multiplexing.md) | 125–160 ms RTT × ~10 handshake round-trips per operation | one persistent master per box, kept warm; **3.0 s → 0.5 s** per params push |
 | [cache.md](cache.md) | expensive data on every page load | seven caching layers, each matched to its data's shape |
 | [concurrent_processing.md](concurrent_processing.md) | one event loop, many slow remote things | subprocess vs. thread vs. task, and where serial is deliberate |
@@ -17,6 +18,12 @@ micro-optimisation. The measurements are preserved in the source comments.
 1. **GIL-bound work goes in a subprocess. I/O-bound work goes in a thread.**
    Getting this backwards is what caused the 13.7 s stalls, and `asyncio.to_thread`
    looked like the fix at the time. It wasn't.
+
+1b. **Setup dominates: hold the connection, don't re-open it.** Measured three
+   independent ways, ~1.8-1.9 s of every chain read was fixed setup and ~0.5 s was
+   the query. The same logic that makes one SSH master per box correct makes one
+   chain connection correct. Rule 1 still holds — that connection lives in
+   `chaind`, not in uvicorn.
 
 2. **Count round-trips, not bytes.** A 4 KB params file is free; the SSH handshake
    isn't. This is why the push abandoned rsync, why masters are multiplexed and kept
@@ -46,10 +53,13 @@ micro-optimisation. The measurements are preserved in the source comments.
 
 | Operation | Typical | Timeout |
 |---|---|---|
-| Metagraph load (cold, worker only) | 2.9 s typical, 10–60 s worst | 90 s |
+| Metagraph load (via chaind) | ~0.46 s | 120 s |
+| Metagraph load (fallback subprocess) | 2.9 s typical, 10–60 s worst | 90 s |
 | Metagraph read (request path) | ~1 ms | — |
-| Reg cost chain query | ~5 s | 120 s |
-| Balance sweep, all coldkeys | tens of s | 300 s |
+| Reg cost (via chaind, block-paced poller) | ~1 ms | — |
+| Reg cost chain query (fallback) | ~5 s | 120 s |
+| Balance sweep, all coldkeys (via chaind) | ~0.31 s | 300 s |
+| Balance sweep, all coldkeys (fallback) | tens of s | 300 s |
 | Daily status refresh | minutes | 600 s |
 | Params push (warm master) | ~0.5 s | 60 s |
 | Params push (cold) | ~2.5–3 s | 60 s |

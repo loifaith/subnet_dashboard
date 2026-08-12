@@ -17,6 +17,7 @@ import time
 import hashlib
 import asyncio
 import shlex
+import gzip
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -37,6 +38,16 @@ MINER_STATUS_REFRESH_SECONDS = int(os.getenv("MINER_STATUS_REFRESH_SECONDS", "90
 FEE_REGIME_CACHE_SECONDS = int(os.getenv("FEE_REGIME_CACHE_SECONDS", "300"))
 REG_COST_CACHE_SECONDS = int(os.getenv("REG_COST_CACHE_SECONDS", "300"))
 REGBOT_BALANCE_CACHE_SECONDS = int(os.getenv("REGBOT_BALANCE_CACHE_SECONDS", "300"))
+# How old the balance file must be before POST /api/regbot/balance/refresh kicks a
+# background sweep. Deliberately NOT the same number as the worker interval above.
+# When the two are equal the endpoint declares the file stale in the same instant
+# the worker is about to rewrite it, so a page load landing just before a tick
+# triggers a redundant sweep — the "a TTL equal to the producer's period is the
+# worst possible value" trap, in its own codebase. One and a half periods means
+# only a genuinely missed tick counts as stale.
+REGBOT_BALANCE_STALE_SECONDS = int(
+    os.getenv("REGBOT_BALANCE_STALE_SECONDS", str(REGBOT_BALANCE_CACHE_SECONDS * 3 // 2))
+)
 COLDKEYS_WATCH_INTERVAL_SECONDS = int(os.getenv("COLDKEYS_WATCH_INTERVAL_SECONDS", "3600"))
 INVESTING88_CACHE_SECONDS = int(os.getenv("INVESTING88_CACHE_SECONDS", "300"))
 INVESTING88_SYNC_HOUR = int(os.getenv("INVESTING88_SYNC_HOUR", "19"))
@@ -61,13 +72,23 @@ ALPHA_PRICE_DEFAULT_RANGE = "7d"
 # The header sparkline is ~130 CSS px wide, so anything past a few hundred points
 # is sub-pixel detail; "all" would otherwise ship 9k points on every poll.
 ALPHA_PRICE_MAX_POINTS = int(os.getenv("ALPHA_PRICE_MAX_POINTS", "240"))
-# The series is hourly, so a gap of more than a couple of hours means the feed
-# behind it has stopped rather than merely lagged, and the header should say so
-# instead of presenting an old close as the live price. Candle timestamps carry
-# no timezone; they are read as UTC, which the data supports — when the feed
-# stalled on 2026-08-10 the gap grew hour-for-hour with wall clock (5.7h, then
-# 24.5h), whereas a timezone offset would have held constant.
-ALPHA_PRICE_STALE_AFTER_HOURS = float(os.getenv("ALPHA_PRICE_STALE_AFTER_HOURS", "2"))
+# When to call the HISTORY overdue. The candles are hourly, but they do not
+# arrive hourly: upstream ships a whole day at once, so the newest candle is
+# normally the previous day's 23:00 and the series runs 13-37h behind. Measured
+# across three samples: 08-10 23:00 seen at both 08-11 04:39 (5.7h) and 08-11
+# 23:29 (24.5h), then exactly 24 new candles by 08-12 12:15 (13.7h).
+#
+# 2h was the original value and was wrong — it read that normal daily cadence as
+# a failure and would have kept the warning lit permanently, which is the same
+# as having no warning. 30h is just past the top of the normal range, so this
+# fires only when a daily drop is genuinely missed.
+#
+# Candle timestamps carry no timezone and are read as UTC for this one
+# calculation; the daily boundary landing exactly on 23:00 is consistent with
+# that. Note the header's headline price does NOT depend on any of this — it
+# comes live from the chain (see renderAlphaPrice); this governs the sparkline's
+# history only.
+ALPHA_PRICE_STALE_AFTER_HOURS = float(os.getenv("ALPHA_PRICE_STALE_AFTER_HOURS", "30"))
 # How often to refresh the warm SSH master connections to the miner boxes. Must be shorter
 # than the SSH ControlPersist window (600s) so masters never expire between refreshes.
 MINER_PARAMS_KEEPALIVE_SECONDS = int(os.getenv("MINER_PARAMS_KEEPALIVE_SECONDS", "300"))
@@ -81,10 +102,20 @@ METAGRAPH_REFRESH_SECONDS = int(os.getenv("METAGRAPH_REFRESH_SECONDS", "90"))
 METAGRAPH_WARM_NETUIDS = [
     int(x) for x in os.getenv("METAGRAPH_WARM_NETUIDS", "79,71,88").split(",") if x.strip()
 ]
+# Pause between warming one netuid and the next. Was 2s, to stop three concurrent
+# child processes each opening a chain connection. chain_daemon.py reuses one
+# connection for all three, so the burst it guarded against no longer exists on
+# the normal path; the gap stays small rather than zero for the fallback path,
+# where each netuid really is a fresh subprocess again.
+METAGRAPH_WARM_GAP_SECONDS = float(os.getenv("METAGRAPH_WARM_GAP_SECONDS", "0.5"))
 # Same idea for the RegBot active-run scan: ~690ms of SSH fan-out across all 12
 # presets, polled by every open tab. Run it once here instead, so the cost stops
 # scaling with the number of dashboards open.
 REGBOT_ACTIVE_SCAN_SECONDS = int(os.getenv("REGBOT_ACTIVE_SCAN_SECONDS", "20"))
+# ...and when there is nothing to watch (no active run, no browser subscribed to
+# the event stream) the same scan drops to this. 12 SSH probes every 20s forever
+# is ~2,160 connections an hour spent confirming that nothing is happening.
+REGBOT_ACTIVE_SCAN_IDLE_SECONDS = int(os.getenv("REGBOT_ACTIVE_SCAN_IDLE_SECONDS", "120"))
 # Two more upstreams that were still request-driven. Both have a 300s TTL and the
 # page reloads every 300s, so *every* automatic refresh landed exactly on expiry
 # and paid the full cost: measured 2.24s for the TAOS fee-regime query and 2.13s
@@ -92,6 +123,11 @@ REGBOT_ACTIVE_SCAN_SECONDS = int(os.getenv("REGBOT_ACTIVE_SCAN_SECONDS", "20"))
 # "waiting for server response". Refresh under the TTL so a warm copy never lapses.
 FEE_REGIME_REFRESH_SECONDS = int(os.getenv("FEE_REGIME_REFRESH_SECONDS", "240"))
 REG_COST_REFRESH_SECONDS = int(os.getenv("REG_COST_REFRESH_SECONDS", "240"))
+# Used instead of the above when chain_daemon.py is serving reg cost from its
+# block-paced poller: that is a ~1ms socket read with no chain query behind it, so
+# staying 240s stale would be pointless. One block is 12s; refreshing a little
+# faster keeps the displayed cost within a block of the chain for free.
+REG_COST_REFRESH_FAST_SECONDS = int(os.getenv("REG_COST_REFRESH_FAST_SECONDS", "10"))
 # A forced refresh (?refresh=1) landing within one block of the last successful
 # read cannot return a different answer — the chain has not produced new state —
 # so it is pure latency: ~2.9s for the metagraph, ~2.2s for reg cost. This window
@@ -120,7 +156,11 @@ SIM_ID_TELEGRAM_CHAT_ID = os.getenv("SIM_ID_TELEGRAM_CHAT_ID", "-1004372773110")
 REFRESH_STATUS_SCRIPT = os.path.join(MONITOR_DIR, "miner_status_cache.py")
 INVESTING88_SYNC_SCRIPT = os.path.join(SN88_MONITOR_DIR, "investing88_cache.py")
 DASHBOARD_ROOT = os.path.dirname(__file__)
-_fee_regime_cache: dict[str, Any] = {"payload": None, "expires_at": 0.0}
+_fee_regime_cache: dict[str, Any] = {
+    "payload": None,     # summary without `books`, what the panel asks for
+    "books": None,       # per-book rates, computed by the same fetch and kept
+    "expires_at": 0.0,
+}
 _reg_cost_cache: dict[int, dict[str, Any]] = {}
 _investing88_cache: dict[int, dict[str, Any]] = {}
 _sim_id_state: dict[str, Any] = {"last": None}
@@ -183,6 +223,60 @@ def _etag_matches(request: Request, etag: str) -> bool:
     return bool(header) and etag in (tag.strip() for tag in header.split(","))
 
 
+# ---- Pre-compressed bodies --------------------------------------------------
+#
+# The byte caches above exist so a hot endpoint never re-serialises. But every 200
+# then handed those same bytes to GZipMiddleware, which compressed them again from
+# scratch, in the event loop, at level 9. Measured per response:
+#
+#     /js/miners.js        16.7 ms    241 KB -> 58 KB
+#     /api/metagraph-data   3.9 ms    151 KB -> 27 KB
+#     /miners               5.4 ms    112 KB -> 15 KB
+#
+# Compressing once per distinct payload and keeping the result is the natural
+# completion of "cache the bytes, not the object". Keyed by ETag, which already
+# identifies a payload exactly, so an entry can never go stale: new data means a
+# new tag means a new entry.
+#
+# Level 6 rather than 9: measured +0.7% on miners.js and +1.9% on the metagraph
+# for 2.5x less CPU on the miss that fills the cache. Nobody notices 400 extra
+# bytes; a 17 ms loop stall on a cold load is the thing worth removing.
+_GZIP_LEVEL = int(os.getenv("GZIP_LEVEL", "6"))
+# Matches the GZipMiddleware minimum_size below: under this, framing overhead is
+# most of the payload and the round trip is dominated by latency anyway.
+_GZIP_MIN_SIZE = 1000
+_GZIP_CACHE_CAP = 64
+_gzip_cache: dict[str, bytes] = {}
+
+
+def _gzipped(body: bytes, etag: str) -> bytes:
+    hit = _gzip_cache.get(etag)
+    if hit is None:
+        hit = gzip.compress(body, _GZIP_LEVEL)
+        if len(_gzip_cache) >= _GZIP_CACHE_CAP:
+            _gzip_cache.clear()
+        _gzip_cache[etag] = hit
+    return hit
+
+
+def _maybe_gzip(request: Request, body: bytes, etag: str, headers: dict) -> bytes:
+    """Swap in the pre-compressed body when the client accepts gzip.
+
+    Starlette's GZipMiddleware skips any response that already carries a
+    Content-Encoding, so setting it here means the body passes through untouched
+    rather than being compressed twice.
+
+    It also skips adding `Vary` on that pass-through path, so we set it ourselves:
+    without it a shared cache could hand these gzipped bytes to a client that
+    never asked for them.
+    """
+    if len(body) < _GZIP_MIN_SIZE or "gzip" not in request.headers.get("accept-encoding", ""):
+        return body
+    headers["Content-Encoding"] = "gzip"
+    headers["Vary"] = "Accept-Encoding"
+    return _gzipped(body, etag)
+
+
 def _json_bytes_response(
     request: Request, body: bytes, etag: str, cache_state: str = "hit"
 ) -> Response:
@@ -195,6 +289,7 @@ def _json_bytes_response(
     headers = {"ETag": etag, "Cache-Control": "no-cache", "X-Cache": cache_state}
     if _etag_matches(request, etag):
         return Response(status_code=304, headers=headers)
+    body = _maybe_gzip(request, body, etag, headers)
     return Response(content=body, media_type="application/json", headers=headers)
 
 
@@ -314,7 +409,17 @@ async def _run_status_refresh_subprocess(timeout: float = 600.0) -> None:
 
 
 async def _miner_status_refresh_worker() -> None:
+    """Rebuild the daily-status files on a fixed cadence.
+
+    Deadline-scheduled: _run_status_refresh_subprocess() is an SSH-driven sweep
+    with no upper bound on its runtime, so sleeping a flat interval *after* it
+    made the real period `interval + however long the sweep took` and let it drift
+    indefinitely. As a deadline it holds MINER_STATUS_REFRESH_SECONDS until the
+    work itself exceeds that, then simply runs back-to-back instead of falling
+    further behind every cycle.
+    """
     while True:
+        started = time.time()
         try:
             await _run_status_refresh_subprocess()
             # The daily-status file has just been rewritten, so the byte cache is
@@ -323,7 +428,7 @@ async def _miner_status_refresh_worker() -> None:
             _publish("uid_metrics", "refreshed:%d" % int(time.time()))
         except Exception as exc:
             logger.error("Miner status cache refresh failed: %s", exc)
-        await asyncio.sleep(MINER_STATUS_REFRESH_SECONDS)
+        await _sleep_until_next_tick(started, MINER_STATUS_REFRESH_SECONDS)
 
 
 async def _run_investing88_sync_subprocess(timeout: float = 1800.0) -> None:
@@ -352,13 +457,18 @@ async def _run_investing88_sync_subprocess(timeout: float = 1800.0) -> None:
 
 
 async def _investing88_daily_sync_worker() -> None:
+    # Sleeps first (nothing to sync at boot), then on a deadline: the sync itself
+    # can run for many minutes, and a flat sleep after it would push each run
+    # later than the last.
+    await asyncio.sleep(INVESTING88_SYNC_INTERVAL_SECONDS)
     while True:
-        await asyncio.sleep(INVESTING88_SYNC_INTERVAL_SECONDS)
+        started = time.time()
         logger.info("Investing88 hourly sync starting (interval=%ss)", INVESTING88_SYNC_INTERVAL_SECONDS)
         try:
             await _run_investing88_sync_subprocess()
         except Exception as exc:
             logger.error("Investing88 cache sync failed: %s", exc)
+        await _sleep_until_next_tick(started, INVESTING88_SYNC_INTERVAL_SECONDS)
 
 
 _regbot_balance_inflight: dict[str, "asyncio.Task"] = {}
@@ -413,11 +523,12 @@ async def _coldkeys_watch_worker() -> None:
     from coldkeys_watch import run_collect_and_diff
 
     while True:
+        started = time.time()
         try:
             await run_collect_and_diff()
         except Exception as exc:
             logger.error("Coldkey/IP watch run failed: %s", exc)
-        await asyncio.sleep(COLDKEYS_WATCH_INTERVAL_SECONDS)
+        await _sleep_until_next_tick(started, COLDKEYS_WATCH_INTERVAL_SECONDS)
 
 
 async def _sim_id_watch_worker() -> None:
@@ -433,6 +544,7 @@ async def _sim_id_watch_worker() -> None:
     from telegram_notify import send_telegram_message
 
     while True:
+        started = time.time()
         try:
             sim_id = await asyncio.to_thread(get_sim_id, True)
             last = _sim_id_state["last"]
@@ -455,7 +567,7 @@ async def _sim_id_watch_worker() -> None:
                 _sim_id_state["last"] = sim_id
         except Exception as exc:
             logger.error("Sim id watch failed: %s", exc)
-        await asyncio.sleep(SIM_ID_POLL_SECONDS)
+        await _sleep_until_next_tick(started, SIM_ID_POLL_SECONDS)
 
 
 # Last result of the RegBot active-run scan: {"payload", "updated_at", "body", "etag"}.
@@ -490,15 +602,30 @@ async def _regbot_active_scan_worker() -> None:
 
     Errors keep the previous result rather than blanking the bar: a momentarily
     unreachable box should not look like "no runs are active".
+
+    IDLE BACKOFF. At 20s this is the highest-frequency remote work in the service:
+    12 SSH probes every 20s is ~2,160 connections an hour, run forever whether or
+    not anything is happening. It only needs to be fast when there is something to
+    watch, so when no run is active AND no browser is subscribed to the event
+    stream, it drops to REGBOT_ACTIVE_SCAN_IDLE_SECONDS. Either condition
+    returning restores the fast cadence on the very next tick — and a run started
+    through this dashboard publishes immediately anyway, so the bar never waits on
+    a scan to appear.
     """
     from regbot import get_active_runs
 
     while True:
+        started = time.time()
         try:
             await _store_regbot_active(await get_active_runs())
         except Exception as exc:
             logger.error("RegBot active-run scan failed: %s", exc)
-        await asyncio.sleep(REGBOT_ACTIVE_SCAN_SECONDS)
+        active = ((_regbot_active_state.get("payload") or {}).get("active")) or []
+        idle = not active and not _sse_subscribers
+        await _sleep_until_next_tick(
+            started,
+            REGBOT_ACTIVE_SCAN_IDLE_SECONDS if idle else REGBOT_ACTIVE_SCAN_SECONDS,
+        )
 
 
 _fee_regime_inflight: dict[str, "asyncio.Task"] = {}
@@ -517,14 +644,20 @@ async def _compute_fee_regime(include_books: bool = False) -> dict:
     summary = build_fee_regime_summary(maker, taker)
     if summary.get("error"):
         raise RuntimeError(summary["error"])
-    if not include_books:
-        summary.pop("books", None)
     summary["updated_at"] = datetime.now(timezone.utc).isoformat()
-    # Cache without the per-book payload: it is large, only wanted when the Books
-    # panel is open, and its absence is what the endpoint keys "cached" off.
+    # Cache BOTH shapes. fetch_fee_rates() is the entire ~2.8s cost and it already
+    # returns per-book maker/taker rates; build_fee_regime_summary() derives
+    # `books` from them with local arithmetic and no further upstream call. The
+    # cache used to drop that key, so the worker paid for the books every 240s,
+    # deleted them, and the next click of the Books toggle spent another 2.8s
+    # regenerating 8.4KB that had been in memory moments earlier. Keeping them
+    # costs nothing and makes that click a cache hit.
     _fee_regime_cache["payload"] = {k: v for k, v in summary.items() if k != "books"}
+    _fee_regime_cache["books"] = summary.get("books")
     _fee_regime_cache["loaded_at"] = time.time()
     _fee_regime_cache["expires_at"] = time.time() + FEE_REGIME_CACHE_SECONDS
+    if not include_books:
+        summary.pop("books", None)
     return summary
 
 
@@ -577,6 +710,10 @@ async def _compute_reg_cost(netuid: int) -> dict:
     _reg_cost_cache[netuid] = {
         "payload": payload, "loaded_at": time.time(),
         "expires_at": time.time() + REG_COST_CACHE_SECONDS,
+        # "poller" means chain_daemon.py answered from its block-paced loop, i.e.
+        # this refresh cost a socket round-trip and no chain query at all. The
+        # worker below reads it to decide how often it can afford to run.
+        "source": payload_cli.get("source"),
     }
     return payload
 
@@ -590,18 +727,39 @@ async def _refresh_reg_cost(netuid: int) -> dict:
 
 
 async def _reg_cost_refresh_worker() -> None:
-    """Keep the subnets the UI shows warm. Staggered like the metagraph worker —
-    each is a chain connection, and firing several at once is the burst that
-    starves unrelated queries."""
+    """Keep the subnets the UI shows warm, as often as it is cheap to do so.
+
+    Two cadences, chosen by where the answer came from:
+
+    - chain_daemon.py answered from its block-paced poller. That is a Unix socket
+      round-trip, ~1ms, and no chain query — the daemon polls once no matter how
+      often we ask. So there is no reason to be 240s stale: refreshing every
+      REG_COST_REFRESH_FAST_SECONDS makes the displayed cost effectively
+      block-fresh at zero chain cost.
+    - the daemon is down and this fell back to a child process. That is the old
+      2.1s connect-and-query, and running it every 15s would be far worse than
+      the 240s it used to be. So the slow cadence is kept for that case.
+
+    Getting this backwards is the failure mode the fast path invites, which is why
+    the interval is derived from the recorded source rather than assumed.
+    """
     while True:
         started = time.time()
+        via_daemon = True
         for netuid in REG_COST_WARM_NETUIDS:
             try:
                 await _refresh_reg_cost(netuid)
             except Exception as exc:
                 logger.warning("Reg cost warm refresh failed for netuid=%s: %s", netuid, exc)
-            await asyncio.sleep(2)
-        await _sleep_until_next_tick(started, REG_COST_REFRESH_SECONDS)
+                via_daemon = False
+            if (_reg_cost_cache.get(netuid) or {}).get("source") != "poller":
+                via_daemon = False
+            if not via_daemon:
+                await asyncio.sleep(2)
+        await _sleep_until_next_tick(
+            started,
+            REG_COST_REFRESH_FAST_SECONDS if via_daemon else REG_COST_REFRESH_SECONDS,
+        )
 
 
 @asynccontextmanager
@@ -785,6 +943,7 @@ def _html_page_response(request: Request, name: str) -> Response:
     headers = {"ETag": etag, "Cache-Control": "no-cache"}
     if _etag_matches(request, etag):
         return Response(status_code=304, headers=headers)
+    body = _maybe_gzip(request, body, etag, headers)
     return Response(content=body, media_type="text/html; charset=utf-8", headers=headers)
 
 
@@ -809,8 +968,9 @@ async def miners_js(request: Request):
     headers = {"ETag": hit[2], "Cache-Control": "no-cache"}
     if _etag_matches(request, hit[2]):
         return Response(status_code=304, headers=headers)
+    body = _maybe_gzip(request, hit[1], hit[2], headers)
     return Response(
-        content=hit[1], media_type="application/javascript; charset=utf-8", headers=headers
+        content=body, media_type="application/javascript; charset=utf-8", headers=headers
     )
 
 
@@ -1255,25 +1415,56 @@ async def _warm_one_master(ip: str) -> None:
         pass
 
 
-async def _miner_master_keepalive_worker() -> None:
-    """Keep SSH master connections warm to every miner box so params pushes reuse them.
+def _ssh_hosts_to_keep_warm() -> set[str]:
+    """Every box the dashboard talks to: one SSH master each, shared by everything.
 
-    ControlPersist keeps a master alive only for a while after its last use; with no traffic
-    it expires, and then the next confirm pays the full ~2.5s cold SSH handshake again. This
-    worker refreshes every box's master a little more often than ControlPersist, so a confirm
-    to ANY miner (not just one edited moments ago) reuses a warm connection and finishes in
-    ~0.5s. Runs once at startup, then every MINER_PARAMS_KEEPALIVE_SECONDS. Best-effort: an
-    unreachable box just fails its refresh (and its confirms would fail anyway).
+    The union of two lists that are usually — but not necessarily — the same 12
+    machines: the IPs in the params files, and regbot's SERVER_PRESETS. Deriving
+    it from the params files alone meant a preset with no params yet (a freshly
+    provisioned box) never got a master, so every RegBot probe to it paid a full
+    cold handshake. Presets are the authoritative list of servers; params IPs
+    cover anything registered outside them.
+    """
+    hosts = _miner_ips()
+    try:
+        from regbot import SERVER_PRESETS
+
+        for preset in SERVER_PRESETS:
+            ip = (preset.get("ip") or "").strip()
+            if ip:
+                hosts.add(ip)
+    except Exception as exc:  # noqa: BLE001 - a missing preset list must not stop the warm
+        logger.warning("Could not read SERVER_PRESETS for SSH keepalive: %s", exc)
+    return hosts
+
+
+async def _miner_master_keepalive_worker() -> None:
+    """Keep one SSH master connection warm per server, shared by every caller.
+
+    All the SSH in this service — params pushes, RegBot launches and probes, the
+    active-run scan, unstake runs — goes through the same ControlPath
+    (/tmp/.mp-cm-%C), so there is exactly ONE connection per box and whoever needs
+    it next reuses it. That is the whole point: a cold handshake to the overseas
+    boxes is ~10-13 round-trips at 125-160ms RTT, i.e. 2-3s, and `get_active_runs`
+    alone fans out one ssh per server every REGBOT_ACTIVE_SCAN_SECONDS.
+
+    ControlPersist only keeps a master alive for a while after its last use, so
+    this worker touches every host a little more often than that window, and a
+    master that has died is simply reopened. Best-effort: an unreachable box just
+    fails its refresh, and its real commands would have failed anyway.
+
+    Deadline-scheduled — the warm itself takes as long as the slowest box.
     """
     while True:
+        started = time.time()
         try:
-            ips = await asyncio.to_thread(_miner_ips)
-            if ips:
-                await asyncio.gather(*(_warm_one_master(ip) for ip in ips))
-                logger.info("Warmed SSH masters to %d miner box(es)", len(ips))
+            hosts = await asyncio.to_thread(_ssh_hosts_to_keep_warm)
+            if hosts:
+                await asyncio.gather(*(_warm_one_master(ip) for ip in hosts))
+                logger.info("Warmed SSH masters to %d box(es)", len(hosts))
         except Exception as exc:
             logger.warning("Miner SSH master keepalive failed: %s", exc)
-        await asyncio.sleep(MINER_PARAMS_KEEPALIVE_SECONDS)
+        await _sleep_until_next_tick(started, MINER_PARAMS_KEEPALIVE_SECONDS)
 
 
 def _display_param_keys_for_agent(agent_name: str) -> list[str]:
@@ -1801,13 +1992,11 @@ def _parse_netuid(raw: Optional[str], default: int = 71) -> int:
     except ValueError:
         return default
 
-async def _load_metagraph(netuid: int) -> dict:
-    """Run load_metagraph.py in a child process and cache dict + serialised bytes.
+async def _load_metagraph_subprocess(netuid: int) -> dict:
+    """Run load_metagraph.py in a child process. The fallback path.
 
     Bittensor must never be imported into uvicorn (see
-    docs/sn79/performance/chain_subprocess.md), so this stays a subprocess. Do not
-    call it directly from a request — go through _refresh_metagraph(), which makes
-    concurrent callers share one run instead of each spawning their own.
+    docs/sn79/performance/chain_subprocess.md), so this stays a subprocess.
     """
     python_path = sys.executable or "python3"
     script_path = os.path.join(os.path.dirname(__file__), "load_metagraph.py")
@@ -1825,7 +2014,39 @@ async def _load_metagraph(netuid: int) -> dict:
             stderr.decode("utf-8", errors="replace").strip()
             or f"load_metagraph.py exited {proc.returncode}"
         )
-    data = json.loads(stdout.decode("utf-8"))
+    return json.loads(stdout.decode("utf-8"))
+
+
+async def _load_metagraph(netuid: int) -> dict:
+    """Fetch one netuid's metagraph and cache dict + serialised bytes.
+
+    Asks chain_daemon.py first: it holds one AsyncSubtensor open, so a sync is
+    ~0.46s against ~2.97s for a fresh subprocess. Nearly all of that difference is
+    setup the daemon has already paid — `import bittensor` 0.77s plus connect and
+    metadata decode ~1.04s — not the sync itself, which is only ~0.4s either way.
+    Three warm netuids per cycle therefore cost ~1.4s instead of 8.8s, over one
+    chain connection instead of three.
+
+    Falls back to the child process whenever the daemon cannot be reached, so
+    stopping chaind costs latency and nothing else. Both paths build their payload
+    with load_metagraph.build_payload(), so they cannot return different shapes.
+
+    Do not call this directly from a request — go through _refresh_metagraph(),
+    which makes concurrent callers share one run.
+    """
+    from chain_client import call as chain_daemon_call
+
+    data = None
+    payload = await chain_daemon_call("metagraph", [str(netuid)], timeout=120.0)
+    if payload is not None and payload.get("ok"):
+        data = payload.get("result")
+    if data is None:
+        if payload is not None:
+            logger.warning(
+                "chaind metagraph netuid=%s failed (%s); falling back to subprocess",
+                netuid, payload.get("error"),
+            )
+        data = await _load_metagraph_subprocess(netuid)
     if data.get("error"):
         raise RuntimeError(data["error"])
     # Stamped into the payload rather than sent as a header so the client can tell
@@ -1919,11 +2140,18 @@ async def _refresh_metagraph(netuid: int) -> dict:
 async def _metagraph_refresh_worker() -> None:
     """Own metagraph freshness so that no browser request ever has to.
 
-    Cold load is ~2.9s; the previous design (TTL only, refreshed by whoever
-    arrived first after it lapsed) meant one unlucky page load per 120s per netuid
-    paid that in full. Netuids are refreshed one at a time with a small gap rather
-    than gathered — each is a chain connection, and three at once is exactly the
-    kind of burst that made the balance sweep starve unrelated queries.
+    The previous design (TTL only, refreshed by whoever arrived first after it
+    lapsed) meant one unlucky page load per 120s per netuid paid the full ~2.9s.
+
+    Netuids are still refreshed one at a time rather than gathered, but the gap
+    between them is now small. It existed because each netuid was its own child
+    process opening its own chain connection, and three of those at once was the
+    burst that made the balance sweep starve unrelated queries. Through
+    chain_daemon.py all three share the one connection it already holds, so there
+    is no burst to space out — the gap remains only to keep the fallback path
+    (three real subprocesses) behaving as it did.
+
+    Measured per cycle: 8.82s of chain work plus 4s of gaps, down to ~1.4s.
     """
     while True:
         started = time.time()
@@ -1932,7 +2160,7 @@ async def _metagraph_refresh_worker() -> None:
                 await _refresh_metagraph(netuid)
             except Exception as exc:
                 logger.warning("Metagraph warm refresh failed for netuid=%s: %s", netuid, exc)
-            await asyncio.sleep(2)
+            await asyncio.sleep(METAGRAPH_WARM_GAP_SECONDS)
         await _sleep_until_next_tick(started, METAGRAPH_REFRESH_SECONDS)
 
 
@@ -2386,35 +2614,59 @@ async def get_fee_regime(request: Request):
     refresh = request.query_params.get("refresh", "").lower() in ("1", "true", "yes")
     include_books = request.query_params.get("books", "").lower() in ("1", "true", "yes")
     now = time.time()
+
+    def _cached_payload() -> Optional[dict]:
+        """The cached answer in the shape this request asked for, or None.
+
+        `books=1` used to bypass every branch below and always run the live 2.8s
+        fetch — the one query shape the page actually uses for that panel. The
+        books are now cached by the same worker tick that produced the summary,
+        so both shapes are served from memory.
+        """
+        payload = _fee_regime_cache["payload"]
+        if payload is None:
+            return None
+        if not include_books:
+            return payload
+        books = _fee_regime_cache.get("books")
+        if books is None:
+            return None
+        return {**payload, "books": books}
+
+    cached = _cached_payload()
     if (
         refresh
-        and not include_books
-        and _fee_regime_cache["payload"] is not None
+        and cached is not None
         and (now - _fee_regime_cache.get("loaded_at", 0)) < CHAIN_BLOCK_SECONDS
     ):
-        body, etag = _serialize_json(_fee_regime_cache["payload"])
+        body, etag = _serialize_json(cached)
         return _json_bytes_response(request, body, etag, "hit-coalesced")
 
-    if not refresh and not include_books and _fee_regime_cache["payload"] is not None:
+    if not refresh and cached is not None:
         fresh = now < _fee_regime_cache["expires_at"]
         if not fresh:
             # Same rule as everywhere else here: stale-but-real beats a 2.2s wait
             # on TAOS. _fee_regime_refresh_worker owns freshness; this is the
             # backstop for a tick that failed.
             asyncio.create_task(_swallow(_refresh_fee_regime()))
-        body, etag = _serialize_json(_fee_regime_cache["payload"])
+        body, etag = _serialize_json(cached)
         return _json_bytes_response(request, body, etag, "hit" if fresh else "stale")
 
     def _cached_fallback(reason: str):
         """Serve the last-good regime summary during a transient upstream miss
         instead of failing the whole panel."""
-        cached = _fee_regime_cache["payload"]
-        if cached is not None:
-            logger.warning("Fee regime unavailable (%s); serving cached summary", reason)
-            stale = dict(cached)
-            stale["stale"] = True
-            return stale
-        return None
+        payload = _fee_regime_cache["payload"]
+        if payload is None:
+            return None
+        logger.warning("Fee regime unavailable (%s); serving cached summary", reason)
+        stale = dict(payload)
+        # Carry the books through when the caller wanted them: the Books panel
+        # renders from that key, so dropping it turns a degraded answer into a
+        # broken one.
+        if include_books and _fee_regime_cache.get("books") is not None:
+            stale["books"] = _fee_regime_cache["books"]
+        stale["stale"] = True
+        return stale
 
     try:
         summary = await _refresh_fee_regime(include_books)
@@ -3073,7 +3325,7 @@ async def regbot_balance_refresh(request: Request):
                 return {**cached, "stale": True}
             raise HTTPException(status_code=502, detail=str(e))
 
-    if age >= REGBOT_BALANCE_CACHE_SECONDS:
+    if age >= REGBOT_BALANCE_STALE_SECONDS:
         # Stale: hand back what we have and let the sweep run behind the response.
         asyncio.create_task(_swallow(_refresh_regbot_balances()))
         return {**cached, "cache": "stale"}

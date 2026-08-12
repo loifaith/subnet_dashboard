@@ -2,6 +2,12 @@
 
 The single most consequential performance decision in this codebase.
 
+> **This is still the rule, but it is no longer the fast path.** Chain work must
+> stay out of the API process — that has not changed — but it does not have to
+> start a *new* process every time. `chain_daemon.py` is a separate process that
+> holds one connection open and answers over a Unix socket; everything below is
+> what runs when it is unreachable. See [chain_daemon.md](chain_daemon.md).
+
 ## The problem, measured
 
 `substrate`'s runtime-metadata decode is **pure Python**, so a chain query holds the
@@ -82,7 +88,7 @@ Same rule, same mechanism:
 
 | Work | Child process |
 |---|---|
-| metagraph | [load_metagraph.py](../../../load_metagraph.py), 90s timeout |
+| metagraph | [load_metagraph.py](../../../load_metagraph.py), 90s timeout — fallback only |
 | daily miner status | `miner_status_cache.py` as `__main__`, 600s timeout |
 | coldkey/IP collection | `collect_coldkeys_ips.py`, 120s timeout |
 | balances, reg cost | `chain_cli.py`, 120–300s timeout |
@@ -97,3 +103,5 @@ All are spawned with `asyncio.create_subprocess_exec` + `asyncio.wait_for`, with
 > is fine.
 
 Adding a convenient `import bittensor` at the top of `app.py` would undo all of this.
+`chaind` does not violate it: it is its own process with its own GIL, and uvicorn
+talks to it over a socket.

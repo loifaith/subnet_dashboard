@@ -17,9 +17,16 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 MINER_PARAMS_DIR = os.path.join(PROJECT_ROOT, "79Miners", "params")
 MINER_PARAMS_REMOTE_DIR = os.getenv("MINER_PARAMS_REMOTE_DIR", "/root/79/sn-79")
 MINER_PARAMS_RSYNC_USER = os.getenv("MINER_PARAMS_RSYNC_USER", "root")
+# Same ControlPath as app.py and regbot.py on purpose: one SSH master per box,
+# shared by every caller in this project, kept warm by the keepalive worker. This
+# module was the last one still opening its own connection — a full TCP/KEX/auth
+# handshake per sync, which on the overseas boxes (125-160ms RTT, ~10-13 round
+# trips) is 2-3s to push a 4KB file. ControlMaster=auto still falls back to a
+# fresh connection when no master exists, so nothing breaks if it is not running.
 MINER_PARAMS_RSYNC_SSH_OPTS = os.getenv(
     "MINER_PARAMS_RSYNC_SSH_OPTS",
-    "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15",
+    "-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o GSSAPIAuthentication=no "
+    "-o ControlMaster=auto -o ControlPath=/tmp/.mp-cm-%C -o ControlPersist=600",
 )
 DEFAULT_NETUID = 79
 

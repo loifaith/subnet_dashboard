@@ -429,8 +429,14 @@ var EVENT_TOPICS = {
 var topicInFlight = {};
 
 function onServerChange(topic, etag) {
+  // Per-netuid topic, so it can't live in the flat EVENT_TOPICS map above.
+  if (topic.indexOf("metagraph:") === 0) {
+    var n = parseInt(topic.slice("metagraph:".length), 10);
+    if (!isNaN(n)) onMetagraphChanged(n);
+    return;
+  }
   var entry = EVENT_TOPICS[topic];
-  if (!entry) return; // e.g. metagraph:<netuid>, which loadData owns
+  if (!entry) return;
   // Two endpoints publish from inside their own GET handler, so a notification
   // can arrive before the fetch that caused it has stored its ETag. Without
   // this guard that race turns one change into two or three fetches.
@@ -1070,6 +1076,54 @@ function forceMetagraphReread(netuid, onFresh) {
     });
 }
 
+// Everything that has to run after the miner rows change. Module scope because
+// both loadData() and the metagraph push handler repaint through it, and two
+// copies of this list would drift.
+function repaintTable() {
+  updateStatistics();
+  renderChart();
+  filterTable();
+  updateHighlightInfo();
+}
+
+// ---- Metagraph pushes -------------------------------------------------------
+//
+// The server publishes `metagraph:<netuid>` the moment a refresh lands a snapshot
+// whose ETag actually changed — roughly every METAGRAPH_REFRESH_SECONDS. This
+// handler used to be a comment saying loadData owned it, while loadData polled on
+// a flat 5-minute timer: the table could sit 5 minutes stale with the "there is
+// new data" notification arriving and being dropped on the floor.
+//
+// Subscribing makes it fresher AND cheaper. loadMetagraph() goes through
+// conditionalFetch, so a re-read the client already has costs a 304 with no body,
+// and the fetches now happen when the data changes rather than on a clock.
+var metagraphPushInFlight = false;
+
+function onMetagraphChanged(netuid) {
+  // The server warms three netuids; only the one on screen matters. Merging
+  // another subnet's metagraph into this table is the hazard the subnet-switch
+  // path already guards against.
+  if (netuid !== getSubnetFromInput()) return;
+  if (metagraphPushInFlight) return;
+  if (document.visibilityState !== "visible") return;
+  // A forced re-read is already fetching newer data and will repaint itself.
+  if (metagraphRereadInFlight) return;
+  metagraphPushInFlight = true;
+  loadMetagraph(netuid)
+    .then(function (fresh) {
+      if (getSubnetFromInput() !== netuid) return;
+      processMetagraph(fresh);
+      repaintTable();
+      lastDataLoadAt = Date.now();
+    })
+    .catch(function (err) {
+      console.warn("Metagraph push refresh failed:", err);
+    })
+    .then(function () {
+      metagraphPushInFlight = false;
+    });
+}
+
 function loadData(forceRefresh) {
   document.getElementById("loadingOverlay").classList.add("active");
   setRefreshBusy(true);
@@ -1079,12 +1133,7 @@ function loadData(forceRefresh) {
   loadMetagraph(netuid)
     .then(function (metagraphData) {
       processMetagraph(metagraphData);
-      var afterLoad = function () {
-        updateStatistics();
-        renderChart();
-        filterTable();
-        updateHighlightInfo();
-      };
+      var afterLoad = repaintTable;
 
       // Paint the table the moment the metagraph is in, and again as soon as the
       // two feeds that add columns to it arrive. Everything else on this page
@@ -4425,8 +4474,15 @@ function renderAlphaPriceChart(data) {
   if (!data || !data.points || data.points.length < 2) return;
 
   var isDark = document.documentElement.classList.contains("theme-dark");
+  // Prefer the change the chip is actually displaying (live headline vs window
+  // start); falls back to the series' own figure before renderAlphaPrice has
+  // run or when no live price is available.
   var line = alphaPriceLineColor(
-    alphaPriceDirection(data.change_pct),
+    alphaPriceDirection(
+      data._effective_change_pct != null
+        ? data._effective_change_pct
+        : data.change_pct
+    ),
     isDark
   );
   var ctx = canvas.getContext("2d");
@@ -4518,14 +4574,37 @@ function renderAlphaPriceAge(card, data) {
     return;
   }
   ageEl.style.display = "";
+  // Says "history", not "price": with the headline coming live off the chain,
+  // an overdue feed no longer means the number is wrong — only that the line
+  // under it stops earlier than it should.
   ageEl.innerHTML =
-    '<i class="bi bi-exclamation-triangle-fill"></i>' +
+    '<i class="bi bi-exclamation-triangle-fill"></i>history ' +
     formatAlphaAge(data.age_hours) +
-    " old";
+    " behind";
   ageEl.title =
-    "Price feed has not advanced since " +
+    "The daily price history has not advanced since " +
     data.latest_candle +
-    " UTC. The value shown is that candle's close, not the live price.";
+    " UTC, which is past its usual once-a-day drop. The headline price is " +
+    "unaffected — it is read live from the chain.";
+}
+
+// The sparkline's own end date. Shown whenever the headline is live, because
+// that is exactly when the two can disagree and look broken.
+function renderAlphaHistEnd(data, headlineIsLive) {
+  var el = document.getElementById("alphaPriceHistEnd");
+  if (!el) return;
+  if (!headlineIsLive || !data.latest_candle) {
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "";
+  // "08-11 23:00" from "2026-08-11 23:00" — the year is noise at this size.
+  el.textContent = "→ " + String(data.latest_candle).slice(5);
+  el.title =
+    "The sparkline is a once-a-day feed and ends at " +
+    data.latest_candle +
+    " UTC. The price above it is live from the chain, so the two differ by " +
+    "however much alpha has moved since.";
 }
 
 function renderAlphaPrice(data, netuid) {
@@ -4546,9 +4625,30 @@ function renderAlphaPrice(data, netuid) {
 
   card.style.display = "";
   if (labelEl) labelEl.textContent = "SN" + netuid + " α";
-  valueEl.textContent = formatAlphaPrice(data.current) + " τ";
 
-  var dir = alphaPriceDirection(data.change_pct);
+  // Headline comes from the chain, not from the series. The history feed ships
+  // one batch a day, so its newest close is normally yesterday's — showing it
+  // here meant the header was permanently ~a day behind the real price (3.2%
+  // out when this was measured). processMetagraph() has already stored the live
+  // price by the time this runs, and it refreshes on the same 5-minute cycle,
+  // so the headline now moves on its own. The series still drives the shape of
+  // the line and the high/low, which is what it is actually good for.
+  var live = subnetAlphaPrices[netuid];
+  var headlineIsLive = live != null && isFinite(Number(live));
+  var shown = headlineIsLive ? Number(live) : data.current;
+  valueEl.textContent = formatAlphaPrice(shown) + " τ";
+
+  // Measure the change against whatever is on display, so the two agree. With a
+  // live headline this reads "window start → now"; falling back to the series'
+  // own change_pct would end the comparison at yesterday while the number above
+  // it says now.
+  var changePct = data.change_pct;
+  if (headlineIsLive && data.first) changePct = ((shown - data.first) / data.first) * 100;
+  // Stashed so the theme-repaint path (which re-renders from alphaPriceData)
+  // colours the line by the same number the chip is showing.
+  data._effective_change_pct = changePct;
+
+  var dir = alphaPriceDirection(changePct);
   deltaEl.className = "alpha-price-delta " + dir;
   var icon =
     dir === "up"
@@ -4557,24 +4657,23 @@ function renderAlphaPrice(data, netuid) {
         ? "bi-caret-down-fill"
         : "bi-dash";
   var pct =
-    data.change_pct == null
+    changePct == null
       ? "—"
-      : (data.change_pct >= 0 ? "+" : "") +
-        Number(data.change_pct).toFixed(2) +
-        "%";
+      : (changePct >= 0 ? "+" : "") + Number(changePct).toFixed(2) + "%";
   deltaEl.innerHTML = '<i class="bi ' + icon + '"></i>' + pct;
 
-  // A stalled feed still returns a perfectly well-formed series, so nothing
-  // above can tell that `current` is yesterday's close. Say it on the chip
-  // rather than only in the tooltip: an unmarked number reads as the live
-  // price, and acting on a day-old alpha price costs real money.
   renderAlphaPriceAge(card, data);
+  renderAlphaHistEnd(data, headlineIsLive);
 
+  // Two sources, named as such. The gap between them is normal and permanent,
+  // so the tooltip has to explain it rather than leave it looking like drift.
   var title =
-    (data.name ? data.name + " " : "") +
-    "alpha price · " +
-    data.range +
-    "\nhigh " +
+    (data.name ? data.name + " " : "") + "alpha price · " + data.range;
+  title += headlineIsLive
+    ? "\nprice " + formatAlphaPrice(shown) + " τ — live from chain"
+    : "\nprice " + formatAlphaPrice(shown) + " τ — last close (no live price)";
+  title +=
+    "\nhistory: high " +
     formatAlphaPrice(data.high) +
     " τ · low " +
     formatAlphaPrice(data.low) +
@@ -4583,10 +4682,12 @@ function renderAlphaPrice(data, netuid) {
     title += "\n" + data.period_start + " → " + data.period_end;
   if (data.latest_candle)
     title +=
-      "\nlatest candle " +
+      "\nnewest candle " +
       data.latest_candle +
       " UTC" +
-      (data.age_hours != null ? " (" + formatAlphaAge(data.age_hours) + " old)" : "");
+      (data.age_hours != null
+        ? " (" + formatAlphaAge(data.age_hours) + " behind; feed updates daily)"
+        : "");
   // Deliberately labelled as the file, not the data: this is when the collector
   // last rewrote it, which keeps moving even while the series is frozen.
   if (data.updated_at)
@@ -7310,6 +7411,11 @@ function viewRegBotRun(server, runId) {
     document.getElementById("addMinerModal"),
   ).show();
   refreshAddMinerLog();
+  // Clear first: this is an onclick on a bar that re-renders every scan, so
+  // viewing run A then run B — or double-clicking one — used to leave the
+  // previous 4s poller running against /api/regbot/log forever, with only the
+  // newest timer id kept and the rest unreachable.
+  if (addMinerLogTimer) clearInterval(addMinerLogTimer);
   addMinerLogTimer = setInterval(refreshAddMinerLog, 4000);
 }
 
@@ -7517,6 +7623,9 @@ function viewUnstakeRun(server, runId, startedAt) {
     document.getElementById("unstakeModal"),
   ).show();
   refreshUnstakeLog();
+  // Same leak as viewRegBotRun: clear before replacing, or every extra click
+  // orphans a poller that nothing can stop short of a page reload.
+  if (unstakeLogTimer) clearInterval(unstakeLogTimer);
   unstakeLogTimer = setInterval(refreshUnstakeLog, 4000);
 }
 

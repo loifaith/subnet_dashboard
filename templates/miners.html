@@ -275,10 +275,19 @@
         background: rgba(255, 193, 7, 0.14);
         border-color: rgba(255, 193, 7, 0.38);
       }
-      /* The number itself is the thing that misleads when the feed is frozen —
-         dim it so it stops reading as the current price. */
-      .alpha-price-card.is-stale .alpha-price-value {
-        opacity: 0.62;
+      /* Dates the sparkline. Muted and small: it qualifies the line, it is not
+         a headline number. The value is no longer dimmed when the history is
+         overdue — that number is live from the chain and stays trustworthy
+         however far behind the daily history runs. */
+      .alpha-price-hist-end {
+        font-size: 0.63rem;
+        font-variant-numeric: tabular-nums;
+        color: #8a94a6;
+        white-space: nowrap;
+        margin-left: -2px;
+      }
+      html.theme-dark .alpha-price-hist-end {
+        color: #7b879b;
       }
       .alpha-price-card.is-stale .alpha-price-spark {
         opacity: 0.72;
@@ -1992,6 +2001,14 @@
                 aria-label="Alpha price trend"
               ></canvas>
             </div>
+            <!-- The headline price is live from the chain but the sparkline is
+                 a daily feed ending yesterday, so the two legitimately differ.
+                 Dating the line is what stops that reading as a bug. -->
+            <span
+              class="alpha-price-hist-end"
+              id="alphaPriceHistEnd"
+              style="display: none"
+            ></span>
             <div
               class="alpha-price-ranges"
               id="alphaPriceRanges"

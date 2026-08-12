@@ -45,7 +45,7 @@ The HTTP request returns after step 6. Registration itself can legitimately run 
 | `POST /api/regbot/batch/*` | see [batches.md](batches.md) |
 
 Request bodies are Pydantic models with `extra="forbid"`
-([app.py:2898](../../../app.py#L2898)) — an unexpected field is a 400, not
+([app.py:3140](../../../app.py#L3140)) — an unexpected field is a 400, not
 a silently ignored typo.
 
 ## Validation
@@ -78,7 +78,7 @@ See [run79_template.md](run79_template.md).
 
 ## Balances
 
-`refresh_balance_cache()` ([regbot.py:214](../../../79Miners/monitor/regbot.py#L214))
+`refresh_balance_cache()` ([regbot.py:235](../../../79Miners/monitor/regbot.py#L235))
 sweeps every preset's coldkey every 300s into
 `79Miners/RegBot/balance_cache.json`, so `/api/regbot/balance` is a file read.
 

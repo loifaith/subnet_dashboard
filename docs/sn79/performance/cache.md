@@ -16,6 +16,8 @@ which one applies tells you how stale a number on screen can be.
 | 7 | **Serialised-byte cache + weak ETag** | miner params, uid metrics, fee history, the poll endpoints |
 | 8 | **Client-side validator cache** | every endpoint the page fetches, persisted across reloads |
 | 9 | **On-disk snapshot, seeded at startup** | metagraph |
+| 10 | **Pre-compressed body cache** | every byte-cached response over 1KB |
+| 11 | **A held chain connection** | reg cost, metagraph, balances |
 
 Layers 6 and 7 were added on 2026-08-11 —
 [page_load_audit.md](page_load_audit.md) has the before/after measurements and the
@@ -25,7 +27,7 @@ decides who pays for serialisation.** Both used to be the browser.
 ## 1. In-process TTL dicts
 
 ```python
-_fee_regime_cache = {"payload": None, "expires_at": 0.0}
+_fee_regime_cache = {"payload": None, "books": None, "expires_at": 0.0}
 _reg_cost_cache: dict[int, dict]        # netuid -> {payload, expires_at}
 _uid_status_cache: dict                 # (uid, books) -> {data, timestamp}
 _investing88_cache: dict[int, dict]     # uid -> {payload, expires_at}; key -1 = the days payload
@@ -33,7 +35,7 @@ _investing88_cache: dict[int, dict]     # uid -> {payload, expires_at}; key -1 =
 
 | Cache | TTL | Bypass |
 |---|---|---|
-| fee regime | 300s | `?refresh=1`, and `?books=1` always goes upstream |
+| fee regime | 300s | `?refresh=1` |
 | reg cost | 300s | `?refresh=1` |
 | UID status | 60s | `?refresh=1` |
 | Investing88 | 300s | `?refresh=1` or `?live=1` |
@@ -77,7 +79,7 @@ in the UI.
 `/api/regbot/balance` reads the file — but falls through to a **live fetch** when
 the file has no entry for that server yet (right after a fresh deploy, before the
 worker's first pass), so the UI is never stuck empty
-([app.py:1881](../../../app.py#L1881)).
+([app.py:2092](../../../app.py#L2092)).
 
 `POST /api/regbot/balance/refresh` forces the sweep immediately; the UI calls it on
 a manual page refresh so the spend modals always show current numbers.
@@ -96,11 +98,11 @@ worker owns the key's freshness, and the request path does a lookup.
 
 | Cache | Owner | Cadence | Cost avoided per request |
 |---|---|---|---|
-| `_metagraph_cache` | `_metagraph_refresh_worker` | `METAGRAPH_REFRESH_SECONDS` = 90s | a 2.9s chain subprocess |
-| `_regbot_active_state` | `_regbot_active_scan_worker` | `REGBOT_ACTIVE_SCAN_SECONDS` = 20s | a 690ms SSH fan-out across 12 boxes |
+| `_metagraph_cache` | `_metagraph_refresh_worker` | `METAGRAPH_REFRESH_SECONDS` = 90s | a 2.9s chain subprocess (0.46s via chaind) |
+| `_regbot_active_state` | `_regbot_active_scan_worker` | 20s busy / 120s idle | a 690ms SSH fan-out across 12 boxes |
 | `_fee_regime_cache` | `_fee_regime_refresh_worker` | `FEE_REGIME_REFRESH_SECONDS` = 240s | a 2.2s TAOS query |
-| `_reg_cost_cache` | `_reg_cost_refresh_worker` | `REG_COST_REFRESH_SECONDS` = 240s | a 2.1s chain query |
-| `balance_cache.json` | `_regbot_balance_refresh_worker` | `REGBOT_BALANCE_CACHE_SECONDS` = 300s | a 3-15s sweep of 12 coldkeys |
+| `_reg_cost_cache` | `_reg_cost_refresh_worker` | 10s via chaind, else 240s | a 2.1s chain query |
+| `balance_cache.json` | `_regbot_balance_refresh_worker` | `REGBOT_BALANCE_CACHE_SECONDS` = 300s | a 3-15s sweep of 12 coldkeys (0.31s via chaind) |
 
 Three properties make this work, and all three matter:
 
@@ -172,6 +174,18 @@ to be invalidated by the writer. `_save_miner_params_file()` calls
 the agent column keeps showing the pre-edit value for up to 30s after a successful
 save.
 
+### The staleness threshold is not the producer's period
+
+`POST /api/regbot/balance/refresh` decides the file is stale at
+`REGBOT_BALANCE_STALE_SECONDS`, which defaults to **1.5×**
+`REGBOT_BALANCE_CACHE_SECONDS`, not to it.
+
+When the two are equal the endpoint declares the file stale in the same instant
+the worker is about to rewrite it, so a page load landing just before a tick
+triggers a redundant sweep — the "a TTL equal to the producer's period is the
+worst possible value" trap, in this codebase's own consumer. One and a half
+periods means only a genuinely missed tick counts as stale.
+
 ## 8. The client's validator cache
 
 Layer 7 gives every cached read path an `ETag`. Layer 8 is the half that collects
@@ -186,6 +200,43 @@ on browser cache heuristics, and sets `cache: "no-store"` so the two do not disa
 
 Full detail, including the two timestamp fields that were silently defeating it:
 [wire_protocol.md](wire_protocol.md).
+
+## 10. Pre-compressed bodies
+
+Layer 7 stopped the hot paths re-serialising. But every 200 then handed those same
+bytes to `GZipMiddleware`, which compressed them again from scratch, in the event
+loop, at level 9:
+
+| Response | gzip cost per 200 | Size |
+|---|---|---|
+| `/js/miners.js` | **16.7 ms** | 241 KB → 58 KB |
+| `/miners` | 5.4 ms | 112 KB → 15 KB |
+| `/api/metagraph-data` | 3.9 ms | 151 KB → 27 KB |
+| `/api/uid-metrics` | 2.6 ms | 68 KB → 22 KB |
+
+`_maybe_gzip()` compresses **once per distinct payload** and keeps the result,
+keyed by ETag — which already identifies a payload exactly, so an entry cannot go
+stale: new data means a new tag means a new entry.
+
+Two details that make it correct:
+
+- **Starlette skips any response that already carries `Content-Encoding`**, so
+  setting it here means the body passes through untouched rather than being
+  compressed twice. Verified: bodies decode to byte-identical output against the
+  same endpoint requested with `Accept-Encoding: identity`.
+- **It also skips adding `Vary` on that path**, so `_maybe_gzip` sets
+  `Vary: Accept-Encoding` itself. Without it a shared cache could hand gzipped
+  bytes to a client that never asked for them.
+
+Level 6 rather than 9: measured +0.7% on `miners.js` and +1.9% on the metagraph for
+2.5× less CPU on the miss that fills the cache. Set `GZIP_LEVEL` to change it.
+
+## 11. A held chain connection
+
+The cache of last resort is not caching the answer — it is not paying to ask.
+`chain_daemon.py` keeps one `AsyncSubtensor` open, so a metagraph sync costs 0.46s
+instead of 2.97s and reg cost costs ~1ms instead of 2.2s. See
+[chain_daemon.md](chain_daemon.md).
 
 ## 9. The metagraph's on-disk snapshot
 

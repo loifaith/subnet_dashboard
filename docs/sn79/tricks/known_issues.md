@@ -98,7 +98,7 @@ pm2 restart ecosystem.config.json --only dashboard --update-env
 
 | Location | Tracked in git? |
 |---|---|
-| `SIM_ID_TELEGRAM_BOT_TOKEN` default, [app.py:116](../../../app.py#L116) | yes |
+| `SIM_ID_TELEGRAM_BOT_TOKEN` default, [app.py:821](../../../app.py#L821) | yes |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`, [run79.sh:24](../../../79Miners/RegBot/run79.sh#L24) | **yes** |
 
 Two different tokens for two different bots. `.gitignore` is otherwise careful
@@ -118,7 +118,7 @@ git history.
 | Copy | Contains |
 |---|---|
 | `SERVER_PRESETS`, [regbot.py:67](../../../79Miners/monitor/regbot.py#L67) | name, ip, wallet, port_prefix — the source of truth |
-| `SERVER_NICKNAMES`, [app.py:961](../../../app.py#L961) | ip → name |
+| `SERVER_NICKNAMES`, [app.py:1111](../../../app.py#L1111) | ip → name |
 | `SERVER_NICKNAMES`, [miners.html](../../../templates/miners.html) | ip → name |
 
 Add a server to only the first and the table shows a raw IP. Add it to only the
@@ -193,6 +193,10 @@ violate them — that is why they are written down.
 | A `/refresh` endpoint reads its worker's cache, it does not redo the work | calling the sweep synchronously in the handler | `POST /api/regbot/balance/refresh` blocked 4.5-15s for a body its only caller discards |
 | Panels never gate the Refresh button | awaiting them in `loadData`'s returned chain | the button reads busy for ~3s after the page is already current |
 | An optional side effect at the end of a job is wrapped in `try` | calling it bare | a failure discards work that already succeeded — exactly issue 1 |
+| A staleness threshold is never equal to the producer's period | reusing the worker's interval constant in the consumer | the consumer calls the file stale in the instant before the worker rewrites it, and kicks a redundant sweep |
+| A repeating timer is cleared before it is replaced | `t = setInterval(...)` in a click handler | `viewRegBotRun` / `viewUnstakeRun` orphaned a 4s poller per extra click, unstoppable short of a reload |
+| Every `while True:` worker sleeps on a deadline | `await asyncio.sleep(INTERVAL)` after the work | real cadence becomes `INTERVAL + work` and drifts silently |
+| One payload shape is built by one function | a second copy for a second code path | the copies drift, and the drift only shows on the fallback path — the one that runs when something is already wrong |
 
 ## 7. Smaller things
 

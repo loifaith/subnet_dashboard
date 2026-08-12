@@ -24,13 +24,13 @@ to bypass it.
 
 ## Endpoint
 
-`GET /api/sim-id` — [app.py:2566](../../../app.py#L2566). Cheap to poll on every
+`GET /api/sim-id` — [app.py:2808](../../../app.py#L2808). Cheap to poll on every
 dashboard refresh precisely because of the module cache. Rendered by `renderSimId()`
 in the header; hidden for non-79 subnets.
 
 ## The watcher
 
-`_sim_id_watch_worker()` ([app.py:423](../../../app.py#L423)) — every
+`_sim_id_watch_worker()` ([app.py:524](../../../app.py#L524)) — every
 `SIM_ID_POLL_SECONDS` (60):
 
 1. `get_sim_id(force=True)` — **deliberately bypasses the 5-minute cache**, so a
@@ -49,7 +49,7 @@ Sent by `send_telegram_message()`
 `@sn79_sim_id_bot` / the "SN79 Sim ID Alert" channel.
 
 Bot token and chat id are **hard-coded as defaults** at
-[app.py:116-121](../../../app.py#L116-L121), overridable via `SIM_ID_TELEGRAM_BOT_TOKEN`
+[app.py:142-147](../../../app.py#L142-L147), overridable via `SIM_ID_TELEGRAM_BOT_TOKEN`
 and `SIM_ID_TELEGRAM_CHAT_ID`. See
 [../tricks/known_issues.md](../tricks/known_issues.md) — there is a second,
 different hard-coded token in the tracked `run79.sh`.

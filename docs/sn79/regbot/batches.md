@@ -25,7 +25,7 @@ in the batch idle.
 
 That trade-off — strict controlled turn-taking over maximum throughput — was an
 explicit choice, recorded at
-[regbot.py:895-912](../../../79Miners/monitor/regbot.py#L895-L912). If you want full
+[regbot.py:917-934](../../../79Miners/monitor/regbot.py#L917-L934). If you want full
 concurrency, trigger each server separately; don't "fix" the batch.
 
 ## Several batches *can* run at once
@@ -91,7 +91,7 @@ terminal status:
 > writing a "DONE" here would record a completion that never happened and stop the
 > next startup from resuming the items still waiting to launch.
 
-`resume_interrupted_batches()` runs once at startup ([app.py:630](../../../app.py#L630))
+`resume_interrupted_batches()` runs once at startup ([app.py:778](../../../app.py#L778))
 and restarts the orchestrator for anything still `RUNNING`/`CANCELLING`. Items
 already in `("DONE", "CANCELLED", "LAUNCH_FAILED")` are skipped — re-running them
 would double-register.

@@ -22,13 +22,20 @@ protocol chatter — at 160 ms RTT that is 2–3 seconds.
 -o StrictHostKeyChecking=accept-new  (params push)
 ```
 
-Defined twice, and **deliberately on the same `ControlPath`**:
+Defined in three places, and **deliberately on the same `ControlPath`**:
 
-- `MINER_PARAMS_RSYNC_SSH_OPTS` — [app.py:951](../../../app.py#L951)
-- `SSH_OPTS` — [regbot.py:52](../../../79Miners/monitor/regbot.py#L52)
+- `MINER_PARAMS_RSYNC_SSH_OPTS` — [app.py](../../../app.py)
+- `SSH_OPTS` — [regbot.py](../../../79Miners/monitor/regbot.py)
+- `MINER_PARAMS_RSYNC_SSH_OPTS` — [miner_params_sync.py](../../../79Miners/monitor/miner_params_sync.py)
 
-Sharing the path means the params push and the RegBot probes use **one master per
-box**, and the params keepalive worker keeps them warm for free.
+Sharing the path means there is **exactly one connection per box**, reused by
+everything: params pushes, RegBot launches and probes, the active-run scan, unstake
+runs. Whoever needs a box next reuses the master somebody else opened, and the
+keepalive worker keeps them warm for free.
+
+`miner_params_sync.py` was the last holdout — it carried only
+`StrictHostKeyChecking` and `ConnectTimeout`, so every sync it performed opened its
+own connection and paid a full handshake.
 
 `GSSAPIAuthentication=no` drops one pointless auth round-trip.
 
@@ -48,9 +55,16 @@ multiplexing that was ~10 round-trips × 12–18 servers, every 20 seconds.
 `ControlPersist` keeps a master alive only for a while **after its last use**. With
 no traffic it expires, and then the next Confirm pays the full cold handshake again.
 
-`_miner_master_keepalive_worker()` ([app.py:1258](../../../app.py#L1258)) runs
-`ssh <opts> host true` against every distinct miner IP every
-`MINER_PARAMS_KEEPALIVE_SECONDS`, resetting the persist timer.
+`_miner_master_keepalive_worker()` runs `ssh <opts> host true` against every host
+every `MINER_PARAMS_KEEPALIVE_SECONDS`, resetting the persist timer.
+
+**The host list is the union of the params-file IPs and regbot's
+`SERVER_PRESETS`** (`_ssh_hosts_to_keep_warm()`). Deriving it from the params files
+alone meant a preset with no params yet — a freshly provisioned box — never got a
+master, so every RegBot probe to it paid a full cold handshake. Presets are the
+authoritative list of servers; params IPs cover anything registered outside them.
+Today both lists are the same 12 machines, which is exactly why the gap was easy to
+miss.
 
 > **The invariant: `MINER_PARAMS_KEEPALIVE_SECONDS` (300) must stay shorter than
 > `ControlPersist` (600).** Raise one without the other and every operation goes
