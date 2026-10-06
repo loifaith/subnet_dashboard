@@ -65,6 +65,7 @@ SSH_OPTS = [
 # Add Miner / Multi-Server Register forms let you override it per run, and
 # clearing the field falls back to run79.sh's own default.
 SERVER_PRESETS: List[Dict[str, str]] = [
+    {"name": "Server_1", "ip": "65.109.34.53", "wallet": "n001", "port_prefix": "808X,809X"},
     {"name": "Server1", "ip": "65.108.232.96", "wallet": "bittensor001", "port_prefix": "79XX"},
     {"name": "Server2", "ip": "65.108.108.139", "wallet": "bittensor002", "port_prefix": "79XX"},
     {"name": "Server3", "ip": "65.109.87.169", "wallet": "bittensor005", "port_prefix": "809X"},

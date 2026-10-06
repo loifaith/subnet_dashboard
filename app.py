@@ -1119,6 +1119,7 @@ DISPLAY_PARAM_KEYS = [
     "taker_ratio",
 ]
 SERVER_NICKNAMES = {
+    "65.109.34.53": "Server_1",
     "65.108.232.96": "Server1",
     "65.108.108.139": "Server2",
     "65.109.87.169": "Server3",
