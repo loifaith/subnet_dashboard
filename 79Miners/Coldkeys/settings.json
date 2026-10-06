@@ -2,9 +2,7 @@
   "netuid": 53,
   "chain_endpoint": "wss://entrypoint-finney.opentensor.ai:443",
   "validator_uids_to_exclude": [],
-
   "out_dir": "out",
-
   "taostats": {
     "limit": 100,
     "max_pages": 0,
@@ -14,13 +12,11 @@
     "sleep_s": 0.2,
     "timeout_s": 25
   },
-
   "grouping": {
     "mode": "any",
     "min_transfers": 0.0001,
     "min_amount_rao": 0
   },
-
   "excluded_coldkeys": [
     "5Fgn2nucNdvnfBkV6AZvrz6cvxg6qrSCgjaQnJWqVJqRUY7r",
     "5DLysBUFyR8v75vef54DATeVBy9sMEx5JdeLvikXvbGYvx6N",
@@ -61,8 +57,6 @@
     "5EHKVSarB9U2G17aEMAz7uXx4pCJMQuWNYhVLcdNbBneuq5z",
     "5F9BHbXuaThK26eNaVWt6LDXpQxBH6Gzz9NGfpt64a3QQkSZ",
     "5FRffJzovvSiA9B2vFc6arVTEJd5dgZX14Ug6826mA3c2Eir",
-    "5H9EEaLUHwpYJ49MYbZjPVvrVv6439N9HXhvSBSfrZMSYzZ2",
-    "5G96Vc7YqepyNNZi6dWqzpzQJtQxcZFdysC7Cp15ZgrTfhXf",
     "5FRHjn6FTKovikhTDk7vE73Z2qM7bp6VeW6ALBQ2gs2bNerG",
     "5E6xNwBPFSwYkySuieS3Y7vF8SGBW7GfoF3XfGZgQzkvrVoA",
     "5HYhmNU4S7T7uV9nRrMAtp9R1uAeVi5gSzujb8yCvuZPkYKP",
