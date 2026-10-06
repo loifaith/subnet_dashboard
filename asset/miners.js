@@ -215,7 +215,7 @@ var DISPLAY_PARAM_KEYS = ["max_quantity", "min_quantity", "taker_ratio"];
 var SERVER_NICKNAMES = {
   "65.109.34.53": "Server_1",
   "65.108.232.96": "Server1",
-  "65.108.108.139": "Server2",
+  "65.108.108.139": "Server2-old",
   "65.109.87.169": "Server3",
   "178.16.143.193": "Server4",
   "144.91.111.126": "Server5",
@@ -226,6 +226,7 @@ var SERVER_NICKNAMES = {
   "65.108.0.181": "Server10",
   "65.21.129.168": "Server11",
   "135.181.138.51": "Server12",
+    "65.109.69.29": "Server_2",
 };
 var COLDKEY_NICKNAMES = {
   "5HdegbzgYQ26ZfsqBLx7o54uwFQzLRPwkBe2S6JM2aNVpCj5": "b005",
