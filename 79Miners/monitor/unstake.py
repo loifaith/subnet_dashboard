@@ -69,12 +69,8 @@ DEFAULT_DESTINATIONS: Dict[str, str] = {
     "bittensor001": "5Ehjf6NtQXDNGUKKPQrFwYUnYnYw8giVarJerUXiDmCzg1jk",
     "bittensor002": "5Ehjf6NtQXDNGUKKPQrFwYUnYnYw8giVarJerUXiDmCzg1jk",
     "bittensor005": "5DUeuL8A8NukziacaDkztXEGnC3kJrEQvXC1ujmidt5GT6br",
-    "bittensor006": "5DUeuL8A8NukziacaDkztXEGnC3kJrEQvXC1ujmidt5GT6br",
-    "bittensor007": "5DUeuL8A8NukziacaDkztXEGnC3kJrEQvXC1ujmidt5GT6br",
     "wolf001": "5GRUugodxkeVw1F9yL2Dc4t1saobDE1VLoW7LRy6513CXiN5",
     "wolf002": "5GRUugodxkeVw1F9yL2Dc4t1saobDE1VLoW7LRy6513CXiN5",
-    # w003 and w005 sweep somewhere different from the other wolf coldkeys.
-    "wolf003": "5DaBPf7w764Y5n6VNRE1aMPQdmkubNjRXqvu1heUQFuSSbUp",
 }
 
 

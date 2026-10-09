@@ -78,24 +78,6 @@ SERVER_PRESETS: List[Dict[str, str]] = [
         "port_prefix": "809X"
     },
     {
-        "name": "Server4",
-        "ip": "178.16.143.193",
-        "wallet": "bittensor006",
-        "port_prefix": "809X"
-    },
-    {
-        "name": "Server5",
-        "ip": "144.91.111.126",
-        "wallet": "bittensor007",
-        "port_prefix": "809X"
-    },
-    {
-        "name": "Server6",
-        "ip": "65.109.65.81",
-        "wallet": "wolf003",
-        "port_prefix": "809X"
-    },
-    {
         "name": "Server7",
         "ip": "84.32.34.89",
         "wallet": "wolf002",
