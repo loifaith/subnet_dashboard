@@ -220,6 +220,8 @@ var SERVER_NICKNAMES = {
     "88.216.183.132": "Server_7",  // added 2026-10-06
     "84.32.131.131": "Server_9",  // added 2026-10-09
     "88.216.195.127": "Server_10",  // added 2026-10-12
+    "88.216.183.219": "Server_11",  // added 2026-10-19
+    "88.216.183.214": "Server_4",  // added 2026-10-19
 };
 var COLDKEY_NICKNAMES = {
   "5HdegbzgYQ26ZfsqBLx7o54uwFQzLRPwkBe2S6JM2aNVpCj5": "b005",
