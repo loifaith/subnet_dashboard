@@ -119,6 +119,24 @@ SERVER_PRESETS: List[Dict[str, str]] = [
         "wallet": "c004",
         "port_prefix": "808X,809X"
     },
+    {
+        "name": "Server_5",
+        "ip": "88.216.210.22",
+        "wallet": "c007",
+        "port_prefix": "808X,809X"
+    },
+    {
+        "name": "Server_12",
+        "ip": "88.216.210.114",
+        "wallet": "c008",
+        "port_prefix": "808X,809X"
+    },
+    {
+        "name": "Server_13",
+        "ip": "88.216.210.44",
+        "wallet": "c009",
+        "port_prefix": "808X,809X"
+    },
 ]
 _PRESETS_BY_NAME = {p["name"]: p for p in SERVER_PRESETS}
 
